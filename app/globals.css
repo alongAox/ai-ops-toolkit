@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #212121;
-  --foreground: #ededed;
+  --background: #0b0f14;
+  --foreground: #e2e8f0;
+  --panel: #111820;
+  --panel-border: #1e293b;
+  --accent: #10b981;
+  --accent-dim: #059669;
+  --glow: rgba(16, 185, 129, 0.15);
 }
 
 @theme inline {
@@ -12,106 +17,129 @@
   --font-mono: var(--font-geist-mono);
 }
 
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* 消息气泡 */
-.message-bubble__body {
-  position: relative;
-  border-radius: 1rem;
+/* Dashboard 背景网格 */
+.dashboard-bg {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(rgba(30, 41, 59, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 59, 0.35) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
-.message-bubble--user .message-bubble__body {
-  border-bottom-right-radius: 0.25rem;
+/* 面板卡片 */
+.dashboard-panel {
+  background: linear-gradient(180deg, #131a24 0%, #0f141c 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 4px 24px rgba(0, 0, 0, 0.25);
 }
 
-.message-bubble--user .message-bubble__body::after {
-  content: "";
-  position: absolute;
-  right: -5px;
-  bottom: 6px;
-  width: 0;
-  height: 0;
-  border: 6px solid transparent;
-  border-left-color: #0284c7;
-  border-right: 0;
+.dashboard-panel-header {
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.5);
 }
 
-.message-bubble--assistant .message-bubble__body {
-  border-bottom-left-radius: 0.25rem;
+/* 统计卡片 */
+.stat-card {
+  background: linear-gradient(135deg, #131a24 0%, #0d1219 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.625rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.message-bubble--assistant .message-bubble__body::after {
-  content: "";
-  position: absolute;
-  left: -5px;
-  bottom: 6px;
-  width: 0;
-  height: 0;
-  border: 6px solid transparent;
-  border-right-color: #27272a;
-  border-left: 0;
+.stat-card:hover {
+  border-color: #334155;
+  box-shadow: 0 0 20px var(--glow);
 }
 
-.message-bubble--assistant .message-bubble__body::before {
-  content: "";
-  position: absolute;
-  left: -6px;
-  bottom: 5px;
-  width: 0;
-  height: 0;
-  border: 7px solid transparent;
-  border-right-color: rgb(63 63 70 / 0.8);
-  border-left: 0;
-  z-index: -1;
+/* 状态指示灯 */
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
 }
 
-/* 思考中文字微动效 */
-.thinking-text {
-  animation: thinking-pulse 1.8s ease-in-out infinite;
+.status-dot--live {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
-@keyframes thinking-pulse {
+.status-dot--busy {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.status-dot--idle {
+  background: #64748b;
+}
+
+@keyframes pulse-glow {
   0%,
   100% {
-    opacity: 0.55;
+    opacity: 1;
   }
   50% {
-    opacity: 1;
+    opacity: 0.45;
   }
 }
 
-/* 输入中动画 */
-.typing-dot {
-  display: block;
-  height: 0.5rem;
-  width: 0.5rem;
-  border-radius: 9999px;
-  background-color: #71717a;
-  animation: typing-bounce 1.2s ease-in-out infinite;
+/* 侧边栏平台标签 */
+.platform-tag {
+  border: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.6);
+  transition: border-color 0.2s, background 0.2s;
 }
 
-.animation-delay-150 {
-  animation-delay: 0.15s;
+.platform-tag:hover {
+  border-color: #334155;
+  background: rgba(30, 41, 59, 0.5);
 }
 
-.animation-delay-300 {
-  animation-delay: 0.3s;
+/* 日志编辑器 */
+.log-editor {
+  background: #080c10;
+  border: 1px solid #1e293b;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@keyframes typing-bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
+.log-editor:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+
+/* 聊天气泡 */
+.chat-bubble-ai {
+  border-left: 3px solid #10b981;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+}
+
+.chat-bubble-user {
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+}
+
+/* 主按钮 */
+.btn-primary {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.45);
+}
+
+.btn-primary:disabled {
+  background: #334155;
+  box-shadow: none;
 }

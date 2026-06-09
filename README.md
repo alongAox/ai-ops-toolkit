@@ -1,14 +1,40 @@
-# AI Chat
+# AI Analyzer
 
-基于 [Next.js](https://nextjs.org) App Router 构建的轻量级 AI 对话应用，通过 [OpenRouter](https://openrouter.ai) 统一接入多家大语言模型。界面采用深色主题与聊天气泡布局，适合本地开发与二次扩展。
+面向运维与 SRE 的 **AI 智能日志分析平台**。基于 Next.js 构建，支持文本日志、`.log` 文件与截图的多模态分析，输出结构化故障报告，并支持分析后继续多轮追问。
+
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![React](https://img.shields.io/badge/React-19-61dafb)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
+
+## 预览
+
+- **Dashboard 运维台风格**：统计卡片、双栏面板、实时状态指示
+- **深色主题**：适合机房 / 值班场景长时间使用
 
 ## 功能特性
 
-- **对话界面** — ChatGPT 风格的深色 UI，支持多轮消息展示
-- **消息气泡** — 用户与 AI 消息左右分栏，带圆角与小尾巴样式
-- **加载状态** — 请求进行中显示「AI正在思考」与跳动指示点
-- **快捷键** — `Enter` 发送，`Shift + Enter` 换行
-- **服务端代理** — API Key 仅存于服务端环境变量，不暴露给浏览器
+### 日志分析
+
+- 粘贴或上传 `.log` / 纯文本日志
+- 自动识别 **MySQL、Kubernetes、Kafka、Nginx、Redis、Docker** 等常见运维日志
+- 结构化输出：**错误原因 · 业务影响 · 修复建议 · 风险等级**
+
+### 多模态输入
+
+- 上传或粘贴**截图**（报错弹窗、终端、监控面板等）
+- `Ctrl+V` 智能识别：纯文本 / 图片 / `.log` 文件
+- 日志与图片可**组合分析**
+
+### 分析后对话
+
+- 首屏生成完整分析报告
+- 对结论有疑问可**继续追问**，AI 结合原始日志与上下文解答
+
+### AI 与网络
+
+- **OpenRouter**（推荐，DeepSeek 等，成本低）
+- **OpenAI 官方 API**（可选，需单独充值）
+- 支持 `HTTPS_PROXY`，适配国内代理环境
 
 ## 技术栈
 
@@ -17,182 +43,189 @@
 | 框架 | Next.js 16（App Router） |
 | UI | React 19、Tailwind CSS 4 |
 | 语言 | TypeScript 5 |
-| AI 网关 | OpenRouter Chat Completions API |
+| AI | OpenRouter / OpenAI Chat Completions |
+| 代理 | undici ProxyAgent |
 
-## 架构概览
+## 架构
 
 ```mermaid
 sequenceDiagram
-  participant U as 浏览器
+  participant U as 浏览器 Dashboard
   participant P as app/page.tsx
   participant A as /api/chat
-  participant O as OpenRouter API
+  participant AI as OpenRouter / OpenAI
 
-  U->>P: 输入并发送消息
-  P->>P: 展示用户气泡 + 加载状态
-  P->>A: POST { message }
-  A->>O: chat/completions
-  O-->>A: 模型回复
-  A-->>P: { content }
-  P->>P: 展示 AI 气泡
+  U->>P: 输入日志 / 上传文件 / 截图
+  P->>A: POST mode=analyze
+  A->>AI: 结构化分析 Prompt
+  AI-->>A: 分析报告
+  A-->>P: content
+  P->>U: 展示报告
+
+  U->>P: 追问
+  P->>A: POST mode=followup + messages
+  A->>AI: 带原始日志上下文
+  AI-->>A: 解答
+  A-->>P: content
 ```
-
-## 环境要求
-
-- **Node.js** 18.18 或更高版本（推荐 20 LTS）
-- **npm**、pnpm、yarn 或 bun 任一包管理器
-- 有效的 [OpenRouter](https://openrouter.ai/keys) API Key
 
 ## 快速开始
 
-### 1. 克隆并安装依赖
+### 环境要求
+
+- Node.js 18.18+（推荐 20 LTS）
+- [OpenRouter](https://openrouter.ai/keys) API Key（推荐）或 OpenAI API Key
+
+### 安装
 
 ```bash
-git clone <your-repo-url>
-cd ai-chat
+git clone https://github.com/alongAox/ai-analyzer.git
+cd ai-analyzer
 npm install
 ```
 
-### 2. 配置环境变量
+### 配置
 
-在项目根目录创建 `.env.local`（已被 `.gitignore` 忽略，请勿提交到版本库）：
-
-```env
-# 必填：OpenRouter API Key
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxx
-
-# 可选：默认模型（未设置时使用 deepseek/deepseek-chat）
-OPENROUTER_MODEL=deepseek/deepseek-chat
-
-# 可选：OpenRouter 统计用站点信息
-OPENROUTER_SITE_URL=http://localhost:3000
-OPENROUTER_APP_NAME=AI Chat
+```bash
+copy .env.example .env.local   # Windows
+# cp .env.example .env.local   # macOS / Linux
 ```
 
-修改环境变量后需**重启**开发服务器才能生效。
+**推荐配置（OpenRouter）**
 
-### 3. 启动开发服务器
+```env
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxx
+OPENROUTER_MODEL=deepseek/deepseek-chat
+OPENROUTER_VISION_MODEL=openai/gpt-4o-mini
+
+# 国内建议配置代理（端口按 Clash 等软件为准）
+HTTPS_PROXY=http://127.0.0.1:7890
+```
+
+修改 `.env.local` 后需**重启**开发服务器。
+
+### 运行
 
 ```bash
 npm run dev
 ```
 
-在浏览器打开 [http://localhost:3000](http://localhost:3000) 即可使用。
+访问 [http://localhost:3000](http://localhost:3000)。
 
-### 4. 生产构建
+### 生产构建
 
 ```bash
 npm run build
 npm run start
 ```
 
-## 环境变量说明
+## 环境变量
 
 | 变量名 | 必填 | 默认值 | 说明 |
 |--------|:----:|--------|------|
-| `OPENROUTER_API_KEY` | 是 | — | OpenRouter 平台 API Key |
-| `OPENROUTER_MODEL` | 否 | `deepseek/deepseek-chat` | 模型 ID，见 [OpenRouter 模型列表](https://openrouter.ai/models) |
-| `OPENROUTER_SITE_URL` | 否 | `http://localhost:3000` | 请求头 `HTTP-Referer`，用于 OpenRouter 排行统计 |
-| `OPENROUTER_APP_NAME` | 否 | `AI Chat` | 请求头 `X-Title`，应用展示名称 |
+| `OPENROUTER_API_KEY` | 二选一 | — | OpenRouter Key（推荐） |
+| `OPENROUTER_MODEL` | 否 | `deepseek/deepseek-chat` | 文本分析模型 |
+| `OPENROUTER_VISION_MODEL` | 否 | `openai/gpt-4o-mini` | 图片分析模型 |
+| `OPENAI_API_KEY` | 二选一 | — | OpenAI Key（配置后优先） |
+| `OPENAI_MODEL` | 否 | `gpt-4o-mini` | OpenAI 文本模型 |
+| `OPENAI_VISION_MODEL` | 否 | `gpt-4o-mini` | OpenAI 视觉模型 |
+| `HTTPS_PROXY` | 否 | — | HTTP(S) 代理地址 |
+| `OPENROUTER_SITE_URL` | 否 | `http://localhost:3000` | OpenRouter Referer |
+| `OPENROUTER_APP_NAME` | 否 | `AI Analyzer` | OpenRouter 应用名 |
 
 ## 项目结构
 
 ```
-ai-chat/
+ai-analyzer/
 ├── app/
-│   ├── api/
-│   │   └── chat/
-│   │       └── route.ts      # 服务端：转发 OpenRouter 请求
+│   ├── api/chat/
+│   │   ├── route.ts       # 分析 & 追问 API
+│   │   └── prompts.ts     # 运维分析 Prompt
 │   ├── components/
-│   │   └── message-bubble.tsx # 消息气泡与加载中组件
-│   ├── globals.css           # 全局样式与气泡动画
-│   ├── layout.tsx            # 根布局与元数据
-│   └── page.tsx              # 聊天主页面（客户端）
-├── public/                   # 静态资源
-├── .env.local                # 本地环境变量（需自行创建）
-├── next.config.ts
+│   │   └── dashboard-icons.tsx
+│   ├── globals.css        # Dashboard 主题
+│   ├── layout.tsx
+│   └── page.tsx           # Dashboard 主界面
+├── .env.example
 ├── package.json
 └── README.md
 ```
 
-## 可用脚本
-
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 启动开发服务器（热更新） |
-| `npm run build` | 生产环境构建 |
-| `npm run start` | 运行生产构建结果 |
-| `npm run lint` | 运行 ESLint 检查 |
-
-## API 接口
+## API
 
 ### `POST /api/chat`
 
-将用户单条消息转发至 OpenRouter，并返回模型回复文本。
-
-**请求体**
+**初次分析** `mode: "analyze"`（可省略，默认）
 
 ```json
 {
-  "message": "你好，请介绍一下你自己。"
+  "logs": "2024-01-01 ERROR ...",
+  "images": [{ "name": "err.png", "dataUrl": "data:image/png;base64,..." }]
 }
 ```
 
-**成功响应** `200`
+**追问** `mode: "followup"`
 
 ```json
 {
-  "content": "你好！我是……"
+  "logs": "原始日志（提供上下文）",
+  "messages": [
+    { "role": "assistant", "content": "分析报告..." },
+    { "role": "user", "content": "风险等级为高是什么意思？" }
+  ]
 }
 ```
 
-**错误说明**
+**响应**
 
-- 未配置 `OPENROUTER_API_KEY` 时返回 `500`，`content` 字段包含中文提示
-- OpenRouter 返回错误时，将错误信息透传至 `content`
+```json
+{ "content": "..." }
+```
 
-> 当前实现为**单轮**对话（每次请求仅携带最新一条用户消息）。如需多轮上下文，需在 `route.ts` 中扩展 `messages` 数组并在前端传递历史记录。
+## 使用指南
 
-## 部署
-
-### Vercel（推荐）
-
-1. 将仓库导入 [Vercel](https://vercel.com)
-2. 在 Project Settings → Environment Variables 中配置上述环境变量
-3. 部署完成后访问分配的域名
-
-### 其他平台
-
-任何支持 Node.js 与 Next.js 的托管服务均可使用，构建命令为 `npm run build`，启动命令为 `npm run start`，并确保运行时能读取环境变量。
-
-## 安全提示
-
-- **切勿**将 `.env.local` 或 API Key 提交到 Git 仓库
-- API Key 仅通过 `app/api/chat/route.ts` 在服务端使用，前端不直接调用 OpenRouter
-- 若 Key 曾泄露，请立即在 OpenRouter 控制台轮换密钥
+| 操作 | 说明 |
+|------|------|
+| 输入日志 | 粘贴到左侧终端风格输入框 |
+| 上传 `.log` | 点击「.log 文件」 |
+| 上传图片 | 点击「图片」 |
+| 粘贴截图/文件 | 输入框内 `Ctrl+V` |
+| 开始分析 | 顶栏「开始分析」 |
+| 追问 | 分析完成后在右侧输入框继续提问 |
 
 ## 常见问题
 
-**页面提示未配置 API Key**
+**未配置 API Key**
 
-确认 `.env.local` 位于项目根目录、变量名为 `OPENROUTER_API_KEY`、文件编码为 UTF-8，并已重启 `npm run dev`。
+检查 `.env.local` 中 `OPENROUTER_API_KEY` 或 `OPENAI_API_KEY`，重启 `npm run dev`。
 
-**模型无响应或报错**
+**网络超时 / Connection reset**
 
-检查 OpenRouter 账户余额、所选 `OPENROUTER_MODEL` 是否可用，以及网络是否能访问 `openrouter.ai`。
+配置 `HTTPS_PROXY` 并开启 VPN，重启服务。浏览器能访问不等于 Node 能访问。
 
-**构建时出现 workspace root 警告**
+**OpenAI quota exceeded**
 
-若本机存在多个 `package-lock.json`，可在 `next.config.ts` 中配置 `turbopack.root` 指向本项目目录，或移除无关的 lockfile。
+OpenAI API 需单独绑卡充值，ChatGPT Plus 不含 API 额度。建议改用 OpenRouter + DeepSeek。
 
-## 后续可扩展方向
+**图片分析失败**
 
-- [ ] 多轮对话上下文
-- [ ] 流式输出（SSE）
-- [ ] 会话历史持久化
-- [ ] 模型切换 UI
-- [ ] Markdown / 代码高亮渲染
+确认 `OPENROUTER_VISION_MODEL` 为支持视觉的模型（如 `openai/gpt-4o-mini`）。
+
+## 安全
+
+- **切勿**提交 `.env.local` 或 API Key 到 Git
+- Key 仅用于服务端 `app/api/chat/route.ts`
+- 泄露后立即在平台轮换密钥
+
+## 脚本
+
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 开发模式 |
+| `npm run build` | 生产构建 |
+| `npm run start` | 启动生产服务 |
+| `npm run lint` | ESLint |
 
 ## 许可证
 
-本项目为私有仓库（`package.json` 中 `"private": true`）。对外分发前请自行补充许可证条款。
+私有项目（`package.json` 中 `"private": true`）。

@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Chat",
-  description: "ChatGPT 风格的 AI 聊天界面",
+  title: "AI Analyzer",
+  description: "面向运维与 SRE 的 AI 智能日志分析平台",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="flex min-h-full flex-col bg-[#212121] text-zinc-100">
+      <body className="flex min-h-full flex-col bg-[#0b0f14] text-slate-100">
         {children}
       </body>
     </html>
