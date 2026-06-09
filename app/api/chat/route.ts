@@ -4,9 +4,11 @@ import {
   IMAGE_ANALYSIS_SUPPLEMENT,
   COMBINED_ANALYSIS_SUPPLEMENT,
   FOLLOW_UP_SYSTEM_PROMPT,
+  DAILY_REPORT_SYSTEM_PROMPT,
   buildLogUserPrompt,
   buildImageUserPrompt,
   buildCombinedUserPrompt,
+  buildDailyReportUserPrompt,
   buildFollowUpContext,
   type ChatTurn,
 } from "./prompts";
@@ -218,7 +220,12 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const mode = body.mode === "followup" ? "followup" : "analyze";
+    const mode =
+      body.mode === "followup"
+        ? "followup"
+        : body.mode === "daily-report"
+          ? "daily-report"
+          : "analyze";
     const logs = typeof body.logs === "string" ? body.logs : undefined;
     const images: ImagePayload[] = Array.isArray(body.images)
       ? body.images.filter(
@@ -258,6 +265,51 @@ export async function POST(req: Request) {
           role: msg.role,
           content: msg.content,
         })),
+      ];
+
+      const response = await callChatApi(
+        provider,
+        apiKey,
+        getTextModel(provider),
+        apiMessages
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errMsg =
+          data?.error?.message ??
+          `${provider === "openai" ? "OpenAI" : "OpenRouter"} 请求失败 (${response.status})`;
+
+        return NextResponse.json(
+          { content: errMsg },
+          { status: response.status }
+        );
+      }
+
+      return NextResponse.json({
+        content:
+          data?.choices?.[0]?.message?.content ?? "No response received",
+      });
+    }
+
+    if (mode === "daily-report") {
+      if (!logs?.trim()) {
+        return NextResponse.json(
+          { content: "请提供日志文本或 .log 文件内容。" },
+          { status: 400 }
+        );
+      }
+
+      const apiMessages: ApiMessage[] = [
+        {
+          role: "system",
+          content: DAILY_REPORT_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: buildDailyReportUserPrompt(logs.trim()),
+        },
       ];
 
       const response = await callChatApi(
