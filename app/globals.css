@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0f14;
+  --foreground: #e2e8f0;
+  --panel: #111820;
+  --panel-border: #1e293b;
+  --accent: #10b981;
+  --accent-dim: #059669;
+  --glow: rgba(16, 185, 129, 0.15);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Dashboard 背景网格 */
+.dashboard-bg {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(rgba(30, 41, 59, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 59, 0.35) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* 面板卡片 */
+.dashboard-panel {
+  background: linear-gradient(180deg, #131a24 0%, #0f141c 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-panel-header {
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+/* 统计卡片 */
+.stat-card {
+  background: linear-gradient(135deg, #131a24 0%, #0d1219 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.625rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  border-color: #334155;
+  box-shadow: 0 0 20px var(--glow);
+}
+
+/* 状态指示灯 */
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.status-dot--live {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.status-dot--busy {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.status-dot--idle {
+  background: #64748b;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* 侧边栏平台标签 */
+.platform-tag {
+  border: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.6);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.platform-tag:hover {
+  border-color: #334155;
+  background: rgba(30, 41, 59, 0.5);
+}
+
+/* 日志编辑器 */
+.log-editor {
+  background: #080c10;
+  border: 1px solid #1e293b;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.log-editor:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+
+/* 聊天气泡 */
+.chat-bubble-ai {
+  border-left: 3px solid #10b981;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+}
+
+.chat-bubble-user {
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+}
+
+/* 主按钮 */
+.btn-primary {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.45);
+}
+
+.btn-primary:disabled {
+  background: #334155;
+  box-shadow: none;
+}
