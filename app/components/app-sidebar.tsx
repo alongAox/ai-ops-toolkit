@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { dispatchFeatureSessionStash } from "../../lib/feature-session-cache";
 import { AuthSidebarFooter } from "./auth-sidebar-footer";
 import {
   IconAlert,
@@ -50,6 +51,10 @@ export function AppSidebar() {
               <li key={href}>
                 <Link
                   href={href}
+                  onClick={() => {
+                    if (isActive) return;
+                    dispatchFeatureSessionStash();
+                  }}
                   className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     isActive
                       ? "border border-emerald-500/30 bg-emerald-500/10 font-medium text-emerald-400"

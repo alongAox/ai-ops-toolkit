@@ -4,6 +4,7 @@ import {
   AnalysisPieChart,
   type PieSlice,
 } from "../../../components/analysis-pie-chart";
+import { DashboardExportButton } from "../../../components/dashboard-export-button";
 import {
   IconAlert,
   IconChart,
@@ -168,14 +169,21 @@ export default function DashboardPage() {
             </h1>
             <p className="text-[11px] text-slate-500">Supabase 数据概览</p>
           </div>
-          <button
-            type="button"
-            onClick={() => void fetchDashboard()}
-            disabled={isLoading}
-            className="rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isLoading ? "刷新中…" : "刷新"}
-          </button>
+          <div className="flex items-center gap-2">
+            <DashboardExportButton
+              stats={stats}
+              recentRecords={recentRecords}
+              disabled={isLoading || !stats}
+            />
+            <button
+              type="button"
+              onClick={() => void fetchDashboard()}
+              disabled={isLoading}
+              className="rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoading ? "刷新中…" : "刷新"}
+            </button>
+          </div>
         </div>
       </header>
 

@@ -1,0 +1,199 @@
+import {
+  extractRecordTitle,
+  formatRecordDate,
+  formatRecordTime,
+  getAnalysisTypeLabel,
+  type AnalysisRecord,
+  type AnalysisStats,
+} from "./analysis-records";
+import { buildPdfFilename } from "./export-analysis-pdf";
+
+export type DashboardStatsExport = {
+  stats: AnalysisStats;
+  recentRecords: AnalysisRecord[];
+};
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatExportTime(date: Date): string {
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function percent(count: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((count / total) * 100);
+}
+
+function buildStatsRows(stats: AnalysisStats): string {
+  const rows = [
+    { label: "总分析次数", count: stats.total, color: "#059669" },
+    { label: "日志分析", count: stats.logAnalyzer, color: "#0284c7" },
+    { label: "日报生成", count: stats.dailyReport, color: "#7c3aed" },
+    { label: "错误解释", count: stats.errorExplainer, color: "#d97706" },
+  ];
+
+  return rows
+    .map(
+      (row) => `
+        <tr>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #334155;">${escapeHtml(row.label)}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: ${row.color}; text-align: right;">${row.count.toLocaleString("zh-CN")}</td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; text-align: right;">${stats.total > 0 && row.label !== "总分析次数" ? `${percent(row.count, stats.total)}%` : "—"}</td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function buildRecentRecordsSection(records: AnalysisRecord[]): string {
+  if (records.length === 0) {
+    return `<p style="margin: 0; color: #64748b; font-size: 13px;">暂无分析记录</p>`;
+  }
+
+  return `
+    <ol style="margin: 0; padding-left: 20px; color: #1e293b; font-size: 13px;">
+      ${records
+        .map(
+          (record) => `
+            <li style="margin-bottom: 14px;">
+              <p style="margin: 0 0 4px; font-size: 12px; color: #64748b;">
+                ${escapeHtml(formatRecordDate(record.created_at))} · ${escapeHtml(formatRecordTime(record.created_at))} · ${escapeHtml(getAnalysisTypeLabel(record.analysis_type))}
+              </p>
+              <p style="margin: 0; font-weight: 600;">${escapeHtml(extractRecordTitle(record))}</p>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
+function buildExportContainer(data: DashboardStatsExport, exportedAt: Date): HTMLDivElement {
+  const container = document.createElement("div");
+  container.style.cssText = [
+    "position: fixed",
+    "left: -10000px",
+    "top: 0",
+    "width: 794px",
+    "padding: 48px",
+    "background: #ffffff",
+    "color: #0f172a",
+    "font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    "font-size: 14px",
+    "line-height: 1.65",
+    "box-sizing: border-box",
+  ].join(";");
+
+  container.innerHTML = `
+    <header style="margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0;">
+      <p style="margin: 0 0 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b;">
+        AI Analyzer Dashboard
+      </p>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #0f172a;">
+        统计报告
+      </h1>
+      <p style="margin: 12px 0 0; font-size: 14px; color: #334155;">
+        <span style="color: #64748b; font-weight: 600;">导出时间</span>
+        <span style="margin-left: 8px;">${escapeHtml(formatExportTime(exportedAt))}</span>
+      </p>
+    </header>
+
+    <section style="margin-bottom: 28px;">
+      <h2 style="margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #047857;">统计概览</h2>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <thead>
+          <tr style="background: #f8fafc;">
+            <th style="padding: 10px 12px; text-align: left; color: #64748b; font-weight: 600;">类型</th>
+            <th style="padding: 10px 12px; text-align: right; color: #64748b; font-weight: 600;">次数</th>
+            <th style="padding: 10px 12px; text-align: right; color: #64748b; font-weight: 600;">占比</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${buildStatsRows(data.stats)}
+        </tbody>
+      </table>
+    </section>
+
+    <section style="margin-bottom: 28px;">
+      <h2 style="margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #047857;">最近分析记录</h2>
+      ${buildRecentRecordsSection(data.recentRecords)}
+    </section>
+
+    <footer style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">
+      Generated by AI Analyzer · 数据来源 Supabase analysis_history
+    </footer>
+  `;
+
+  return container;
+}
+
+async function renderContainerToPdf(
+  container: HTMLDivElement,
+  filename: string
+): Promise<void> {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+
+  document.body.appendChild(container);
+
+  try {
+    const canvas = await html2canvas(container, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const printableWidth = pageWidth - margin * 2;
+    const printableHeight = pageHeight - margin * 2;
+    const imgWidth = printableWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL("image/png", 1.0);
+
+    let heightLeft = imgHeight;
+    let y = margin;
+
+    pdf.addImage(imgData, "PNG", margin, y, imgWidth, imgHeight);
+    heightLeft -= printableHeight;
+
+    while (heightLeft > 0) {
+      y = margin - (imgHeight - heightLeft);
+      pdf.addPage();
+      pdf.addImage(imgData, "PNG", margin, y, imgWidth, imgHeight);
+      heightLeft -= printableHeight;
+    }
+
+    const safeName = filename.replace(/[<>"/\\|?*]+/g, "-");
+    pdf.save(safeName.endsWith(".pdf") ? safeName : `${safeName}.pdf`);
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+export async function exportDashboardStatsToPdf(
+  data: DashboardStatsExport
+): Promise<void> {
+  const exportedAt = new Date();
+  const container = buildExportContainer(data, exportedAt);
+  await renderContainerToPdf(container, buildPdfFilename("dashboard-stats"));
+}

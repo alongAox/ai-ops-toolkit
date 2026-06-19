@@ -1,13 +1,20 @@
 "use client";
 
 import { IconActivity, IconAlert, IconShield } from "../../../components/dashboard-icons";
+import { ExportPdfButton } from "../../../components/export-pdf-button";
 import {
   buildAiResultFromMessages,
   buildErrorExplainerUserInput,
   ERROR_EXPLAINER_TYPE,
   formatRecordTime,
-  saveAnalysisRecord,
+  syncAnalysisRecord,
 } from "../../../../lib/analysis-records";
+import {
+  prependSessionCacheIfNew,
+  readSessionCache,
+  writeSessionCache,
+} from "../../../../lib/feature-session-cache";
+import { useAutoStashOnNavigation } from "../../../hooks/use-auto-stash-on-unmount";
 import { useEffect, useRef, useState } from "react";
 
 const MAX_ERROR_SIZE = 50 * 1024;
@@ -42,6 +49,7 @@ type ChatMessage = {
 type CachedIssue = {
   id: string;
   savedAt: number;
+  analyzedAt?: number;
   errorText: string;
   chatMessages: ChatMessage[];
 };
@@ -63,44 +71,63 @@ function errorPreview(text: string, max = 72): string {
 
 function createCacheEntry(
   errorText: string,
-  chatMessages: ChatMessage[]
+  chatMessages: ChatMessage[],
+  analyzedAt: number | null
 ): CachedIssue {
   return {
     id: crypto.randomUUID(),
     savedAt: Date.now(),
+    analyzedAt: analyzedAt ?? undefined,
     errorText,
     chatMessages,
   };
+}
+
+function loadCachedIssues(): CachedIssue[] {
+  return readSessionCache<CachedIssue>(CACHE_STORAGE_KEY).filter(
+    (item) =>
+      typeof item.id === "string" &&
+      typeof item.savedAt === "number" &&
+      typeof item.errorText === "string" &&
+      Array.isArray(item.chatMessages)
+  );
+}
+
+function isSameCachedIssue(previous: CachedIssue, next: CachedIssue): boolean {
+  return (
+    previous.errorText === next.errorText &&
+    previous.chatMessages.length === next.chatMessages.length &&
+    previous.analyzedAt === next.analyzedAt
+  );
 }
 
 export default function ErrorExplainerPage() {
   const [errorText, setErrorText] = useState("");
   const [cachedIssues, setCachedIssues] = useState<CachedIssue[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [analyzedAt, setAnalyzedAt] = useState<number | null>(null);
   const [lastAnalyzedError, setLastAnalyzedError] = useState("");
   const [followUpInput, setFollowUpInput] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [supabaseReady, setSupabaseReady] = useState<boolean | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const historyRecordIdRef = useRef<string | null>(null);
+  const sessionSnapshotRef = useRef({
+    isLoading: false,
+    errorText: "",
+    lastAnalyzedError: "",
+    chatMessages: [] as ChatMessage[],
+    analyzedAt: null as number | null,
+  });
 
   const hasAnalysis = chatMessages.length > 0;
   const canAnalyze = !isLoading && errorText.trim().length > 0;
   const canFollowUp =
     !isLoading && hasAnalysis && followUpInput.trim().length > 0;
-  const canManualStash =
-    !isLoading &&
-    lastAnalyzedError.trim().length > 0 &&
-    chatMessages.length > 0;
-  const canSaveRecord =
-    !isLoading &&
-    !isSaving &&
-    hasAnalysis &&
-    supabaseReady !== false &&
-    (lastAnalyzedError.trim().length > 0 || errorText.trim().length > 0);
+  const canStashSession =
+    !isLoading && hasAnalysis && analyzedAt !== null;
 
   const sessionStatus = isLoading
     ? "analyzing"
@@ -115,44 +142,109 @@ export default function ErrorExplainerPage() {
         : "待命";
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CACHE_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as CachedIssue[];
-        if (Array.isArray(parsed)) {
-          setCachedIssues(parsed);
-        }
-      }
-    } catch {
-      /* ignore corrupt cache */
-    }
+    setCachedIssues(loadCachedIssues());
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(cachedIssues));
-    } catch {
-      /* ignore quota errors */
-    }
-  }, [cachedIssues]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isLoading]);
 
+  const persistAnalysisHistory = async (
+    messages: ChatMessage[],
+    errorSnapshot = lastAnalyzedError
+  ) => {
+    if (messages.length === 0) return;
+
+    const userInput = buildErrorExplainerUserInput(errorSnapshot);
+    if (!userInput.trim()) return;
+
+    const aiResult = buildAiResultFromMessages(messages);
+    const recordId = await syncAnalysisRecord({
+      recordId: historyRecordIdRef.current,
+      analysisType: ERROR_EXPLAINER_TYPE,
+      userInput,
+      aiResult,
+    });
+    if (recordId) {
+      historyRecordIdRef.current = recordId;
+    }
+  };
+
+  sessionSnapshotRef.current = {
+    isLoading,
+    errorText,
+    lastAnalyzedError,
+    chatMessages,
+    analyzedAt,
+  };
+
+  const stashSnapshotToCache = (
+    snapshot: typeof sessionSnapshotRef.current,
+    updateState = true
+  ) => {
+    if (
+      snapshot.isLoading ||
+      snapshot.chatMessages.length === 0 ||
+      snapshot.analyzedAt === null
+    ) {
+      return;
+    }
+
+    const errorSnapshot = snapshot.lastAnalyzedError.trim();
+    if (!errorSnapshot) return;
+
+    const entry = createCacheEntry(
+      errorSnapshot,
+      snapshot.chatMessages,
+      snapshot.analyzedAt
+    );
+    const next = prependSessionCacheIfNew(
+      CACHE_STORAGE_KEY,
+      entry,
+      MAX_CACHE_ITEMS,
+      isSameCachedIssue
+    );
+
+    if (updateState) {
+      setCachedIssues(next);
+    }
+  };
+
+  useAutoStashOnNavigation(
+    () => {
+      const snapshot = sessionSnapshotRef.current;
+      return (
+        !snapshot.isLoading &&
+        snapshot.chatMessages.length > 0 &&
+        snapshot.analyzedAt !== null
+      );
+    },
+    () => {
+      stashSnapshotToCache(sessionSnapshotRef.current, false);
+    }
+  );
+
   const pushToCache = (errorSnapshot: string, messagesSnapshot: ChatMessage[]) => {
-    if (!errorSnapshot.trim() || messagesSnapshot.length === 0) return;
-    setCachedIssues((prev) =>
-      [createCacheEntry(errorSnapshot, messagesSnapshot), ...prev].slice(
-        0,
-        MAX_CACHE_ITEMS
-      )
+    if (!errorSnapshot.trim() || messagesSnapshot.length === 0 || analyzedAt === null) {
+      return;
+    }
+    stashSnapshotToCache(
+      {
+        isLoading: false,
+        errorText: errorSnapshot,
+        lastAnalyzedError: errorSnapshot,
+        chatMessages: messagesSnapshot,
+        analyzedAt,
+      },
+      true
     );
   };
 
   const stashActiveSessionIfNeeded = (nextErrorText: string) => {
     const hasActiveSession =
-      lastAnalyzedError.trim().length > 0 && chatMessages.length > 0;
+      lastAnalyzedError.trim().length > 0 &&
+      chatMessages.length > 0 &&
+      analyzedAt !== null;
     const switchingToNewError =
       nextErrorText.trim() !== lastAnalyzedError.trim();
 
@@ -168,6 +260,8 @@ export default function ErrorExplainerPage() {
 
     setIsLoading(true);
     setChatMessages([]);
+    setAnalyzedAt(null);
+    historyRecordIdRef.current = null;
     setFollowUpInput("");
     setError("");
     try {
@@ -181,13 +275,16 @@ export default function ErrorExplainerPage() {
       });
       const data = await response.json();
       setLastAnalyzedError(nextError);
-      setChatMessages([
+      const newMessages: ChatMessage[] = [
         {
           id: crypto.randomUUID(),
           role: "assistant",
           content: data.content ?? "未收到分析结果。",
         },
-      ]);
+      ];
+      setChatMessages(newMessages);
+      setAnalyzedAt(Date.now());
+      void persistAnalysisHistory(newMessages, nextError);
     } catch {
       setError("请求失败，请检查网络或 API 配置。");
     } finally {
@@ -218,14 +315,14 @@ export default function ErrorExplainerPage() {
         }),
       });
       const data = await response.json();
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.content ?? "未收到回复。",
-        },
-      ]);
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.content ?? "未收到回复。",
+      };
+      const finalMessages = [...nextMessages, assistantMessage];
+      setChatMessages(finalMessages);
+      void persistAnalysisHistory(finalMessages);
     } catch {
       setError("请求失败，请检查网络或 API 配置。");
     } finally {
@@ -248,11 +345,14 @@ export default function ErrorExplainerPage() {
   };
 
   const handleManualStash = () => {
-    if (!canManualStash) return;
-    pushToCache(lastAnalyzedError, chatMessages);
+    if (!canStashSession) return;
+    const errorSnapshot = lastAnalyzedError.trim() || errorText.trim();
+    pushToCache(errorSnapshot, chatMessages);
     setErrorText("");
     setLastAnalyzedError("");
     setChatMessages([]);
+    setAnalyzedAt(null);
+    historyRecordIdRef.current = null;
     setFollowUpInput("");
     setError("");
   };
@@ -262,18 +362,34 @@ export default function ErrorExplainerPage() {
     stashActiveSessionIfNeeded(item.errorText);
 
     setErrorText(item.errorText);
-    setLastAnalyzedError(item.errorText);
+    setLastAnalyzedError(
+      item.chatMessages.length > 0 ? item.errorText : ""
+    );
     setChatMessages(item.chatMessages);
+    setAnalyzedAt(
+      item.analyzedAt ??
+        (item.chatMessages.length > 0 ? item.savedAt : null)
+    );
+    historyRecordIdRef.current = null;
     setFollowUpInput("");
     setError("");
-    setCachedIssues((prev) => prev.filter((c) => c.id !== item.id));
+    setCachedIssues((prev) => {
+      const next = prev.filter((c) => c.id !== item.id);
+      writeSessionCache(CACHE_STORAGE_KEY, next);
+      return next;
+    });
   };
 
   const handleDeleteCachedIssue = (id: string) => {
-    setCachedIssues((prev) => prev.filter((c) => c.id !== id));
+    setCachedIssues((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      writeSessionCache(CACHE_STORAGE_KEY, next);
+      return next;
+    });
   };
 
   const handleClearCache = () => {
+    writeSessionCache(CACHE_STORAGE_KEY, []);
     setCachedIssues([]);
   };
 
@@ -284,28 +400,6 @@ export default function ErrorExplainerPage() {
   const showNotice = (message: string) => {
     setNotice(message);
     setError("");
-  };
-
-  const handleSaveRecord = async () => {
-    if (!canSaveRecord) return;
-    setIsSaving(true);
-    setError("");
-    const inputSnapshot = lastAnalyzedError.trim() || errorText.trim();
-    const result = await saveAnalysisRecord({
-      analysisType: ERROR_EXPLAINER_TYPE,
-      userInput: buildErrorExplainerUserInput(inputSnapshot),
-      aiResult: buildAiResultFromMessages(chatMessages),
-    });
-    if (!result.ok) {
-      setError(result.error);
-      if (result.status === 503) {
-        setSupabaseReady(false);
-      }
-    } else {
-      setSupabaseReady(true);
-      showNotice("分析记录已保存至历史记录");
-    }
-    setIsSaving(false);
   };
 
   return (
@@ -335,16 +429,8 @@ export default function ErrorExplainerPage() {
             </div>
             <button
               type="button"
-              onClick={handleSaveRecord}
-              disabled={!canSaveRecord}
-              className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-transparent disabled:text-slate-500"
-            >
-              {isSaving ? "保存中…" : "保存记录"}
-            </button>
-            <button
-              type="button"
               onClick={handleManualStash}
-              disabled={!canManualStash}
+              disabled={!canStashSession}
               className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-transparent disabled:text-slate-500"
             >
               暂存当前
@@ -448,7 +534,7 @@ export default function ErrorExplainerPage() {
                   <button
                     type="button"
                     onClick={handleManualStash}
-                    disabled={!canManualStash}
+                    disabled={!canStashSession}
                     className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-300 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     暂存当前
@@ -474,7 +560,7 @@ export default function ErrorExplainerPage() {
                   <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-[#080c10]/60 px-4 py-8 text-center">
                     <p className="text-sm text-slate-500">暂无暂存问题</p>
                     <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-600">
-                      当前问题尚未解决时，可点击「暂存当前」手动保存；或分析新报错时自动暂存，便于稍后恢复继续排查
+                      分析完成后，切换导航会自动暂存；也可点击「暂存当前」后开始排查新错误
                     </p>
                   </div>
                 ) : (
@@ -519,7 +605,7 @@ export default function ErrorExplainerPage() {
                 )}
 
                 <p className="text-[10px] text-slate-600">
-                  手动暂存或分析新错误时，当前会话会保存至此；恢复后从缓存区移除
+                  分析完成后，手动暂存或切换导航时，当前会话会保存至此；恢复后从缓存区移除
                 </p>
               </div>
             </section>
@@ -527,7 +613,7 @@ export default function ErrorExplainerPage() {
 
           {/* 右侧：分析结果与追问 */}
           <section className="dashboard-panel flex min-h-[420px] flex-col lg:min-h-[calc(100vh-180px)]">
-            <div className="dashboard-panel-header flex items-center justify-between px-4 py-3">
+            <div className="dashboard-panel-header flex flex-wrap items-center justify-between gap-2 px-4 py-3">
               <div className="flex items-center gap-2">
                 <IconShield className="h-4 w-4 text-emerald-500" />
                 <h2 className="text-sm font-medium text-slate-200">
@@ -535,19 +621,20 @@ export default function ErrorExplainerPage() {
                 </h2>
               </div>
               {hasAnalysis && (
-                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                  {chatMessages.length > 1 ? `${chatMessages.length} 条消息` : "已生成"}
-                </span>
-              )}
-              {hasAnalysis && (
-                <button
-                  type="button"
-                  onClick={handleSaveRecord}
-                  disabled={!canSaveRecord}
-                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? "保存中…" : "保存记录"}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                    {chatMessages.length > 1 ? `${chatMessages.length} 条消息` : "已生成"}
+                  </span>
+                  <ExportPdfButton
+                    title="错误解读报告"
+                    analysisType="错误解读"
+                    analyzedAt={new Date(analyzedAt ?? Date.now())}
+                    userInput={buildErrorExplainerUserInput(lastAnalyzedError)}
+                    aiResult={buildAiResultFromMessages(chatMessages)}
+                    filenamePrefix="error-explainer"
+                    disabled={isLoading || analyzedAt === null}
+                  />
+                </div>
               )}
             </div>
 
@@ -565,7 +652,7 @@ export default function ErrorExplainerPage() {
                     </div>
                     <p className="text-sm text-slate-500">等待错误输入</p>
                     <p className="mt-1 max-w-xs text-xs text-slate-600">
-                      分析完成后可继续追问；若需切换处理其他报错，当前会话会自动暂存至左侧缓存区
+                      分析完成后可继续追问；切换导航会自动暂存至左侧缓存区
                     </p>
                   </div>
                 )}

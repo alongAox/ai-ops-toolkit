@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconDocument, IconTerminal } from "./dashboard-icons";
+import { ExportPdfButton } from "./export-pdf-button";
 import {
   buildDailyReportUserInput,
   DAILY_REPORT_TYPE,
@@ -12,6 +13,7 @@ import {
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
 const MAX_SAVED_REPORTS = 30;
 const STORAGE_KEY = "ai-analyzer-daily-reports";
+const ACTIVE_REPORT_KEY = "daily-report-active-id";
 
 type SavedReport = {
   id: string;
@@ -112,7 +114,6 @@ export function DailyReportGenerator() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [copyHint, setCopyHint] = useState("");
 
   const logInputRef = useRef<HTMLInputElement>(null);
@@ -122,18 +123,26 @@ export function DailyReportGenerator() {
     savedReports.find((report) => report.id === activeReportId) ?? null;
 
   const canGenerate = !isLoading && logs.trim().length > 0;
-  const canSaveRecord =
-    !isLoading && !isSaving && Boolean(activeReport?.content.trim());
   const logLines = logs.trim() ? logs.split("\n").length : 0;
 
   useEffect(() => {
     const stored = loadSavedReports();
     setSavedReports(stored);
-    if (stored.length > 0) {
-      setActiveReportId(stored[0].id);
-    }
+    const savedActiveId = localStorage.getItem(ACTIVE_REPORT_KEY);
+    const validActive =
+      savedActiveId && stored.some((report) => report.id === savedActiveId);
+    setActiveReportId(validActive ? savedActiveId : stored[0]?.id ?? null);
     hydratedRef.current = true;
   }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (activeReportId) {
+      localStorage.setItem(ACTIVE_REPORT_KEY, activeReportId);
+    } else {
+      localStorage.removeItem(ACTIVE_REPORT_KEY);
+    }
+  }, [activeReportId]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -219,6 +228,14 @@ export function DailyReportGenerator() {
       });
       setActiveReportId(newReport.id);
       showNotice("日报已生成并暂存，可继续输入新日志生成其他日报");
+      void saveAnalysisRecord({
+        analysisType: DAILY_REPORT_TYPE,
+        userInput: buildDailyReportUserInput(newReport.sourceLogs ?? logs, {
+          logFileName,
+          sourceHint: newReport.sourceHint,
+        }),
+        aiResult: newReport.content,
+      });
     } catch {
       setError("请求失败，请检查网络或 API 配置。");
     } finally {
@@ -259,26 +276,6 @@ export function DailyReportGenerator() {
     setSavedReports([]);
     setActiveReportId(null);
     showNotice("已清空全部暂存日报");
-  };
-
-  const handleSaveRecord = async () => {
-    if (!canSaveRecord || !activeReport) return;
-    setIsSaving(true);
-    setError("");
-    const result = await saveAnalysisRecord({
-      analysisType: DAILY_REPORT_TYPE,
-      userInput: buildDailyReportUserInput(activeReport.sourceLogs ?? logs, {
-        logFileName,
-        sourceHint: activeReport.sourceHint,
-      }),
-      aiResult: activeReport.content,
-    });
-    if (!result.ok) {
-      setError(result.error);
-    } else {
-      showNotice("日报已保存至历史记录");
-    }
-    setIsSaving(false);
   };
 
   return (
@@ -369,7 +366,7 @@ export function DailyReportGenerator() {
             />
 
             <p className="text-[10px] text-slate-600">
-              生成的日报会自动暂存，可清空输入后继续生成其他日报
+              生成的日报会在生成完成后自动暂存；仅输入未生成时切换导航不会保存
             </p>
           </div>
         </section>
@@ -384,15 +381,18 @@ export function DailyReportGenerator() {
               </h2>
             </div>
             {activeReport && !isLoading && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveRecord}
-                  disabled={!canSaveRecord}
-                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? "保存中…" : "保存记录"}
-                </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <ExportPdfButton
+                  title={activeReport.title}
+                  analysisType="运维日报"
+                  analyzedAt={new Date(activeReport.createdAt)}
+                  userInput={buildDailyReportUserInput(
+                    activeReport.sourceLogs ?? logs,
+                    { sourceHint: activeReport.sourceHint }
+                  )}
+                  aiResult={activeReport.content}
+                  filenamePrefix="daily-report"
+                />
                 <button
                   type="button"
                   onClick={() => handleCopy(activeReport)}
@@ -472,7 +472,7 @@ export function DailyReportGenerator() {
 
         {savedReports.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-slate-600">
-            暂无暂存日报，生成后会自动保存在此列表（刷新页面后仍保留）
+            暂无暂存日报；生成完成后会自动保存在此，切换导航后点击标题可恢复查看
           </p>
         ) : (
           <ul className="divide-y divide-slate-800/80">

@@ -67,7 +67,7 @@ export default function HistoryPage() {
               历史记录
             </h1>
             <p className="text-[11px] text-slate-500">
-              查看已保存的分析记录
+              各功能分析完成后自动保存；追问会同步更新同一条记录
             </p>
           </div>
           <button
@@ -103,7 +103,7 @@ export default function HistoryPage() {
             <IconHistory className="mb-4 h-10 w-10 text-slate-600" />
             <p className="text-sm text-slate-500">Supabase 未配置</p>
             <p className="mt-2 max-w-md text-xs text-slate-600">
-              请在 .env.local 配置 Supabase，并在各功能页完成分析后点击「保存记录」。
+              请在 .env.local 配置 Supabase；分析完成后记录会自动出现在此页。
             </p>
           </div>
         )}
@@ -113,7 +113,7 @@ export default function HistoryPage() {
             <IconHistory className="mb-4 h-10 w-10 text-slate-600" />
             <p className="text-sm text-slate-500">暂无历史记录</p>
             <p className="mt-2 max-w-md text-xs text-slate-600">
-              在日志分析器、Error Explainer 或日报生成器中保存记录后，可在此查看。
+              在日志分析、错误解读或日报生成中完成分析后，记录会自动保存于此。
             </p>
           </div>
         )}

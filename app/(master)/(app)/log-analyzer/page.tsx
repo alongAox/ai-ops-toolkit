@@ -6,16 +6,21 @@ import {
   IconShield,
   IconTerminal,
 } from "../../../components/dashboard-icons";
+import { ExportPdfButton } from "../../../components/export-pdf-button";
 import {
   buildAiResultFromMessages,
   buildLogAnalyzerUserInput,
   formatRecordTime,
   LOG_ANALYZER_TYPE,
-  recordInputPreview,
-  saveAnalysisRecord,
-  type AnalysisRecord,
+  syncAnalysisRecord,
 } from "../../../../lib/analysis-records";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  prependSessionCacheIfNew,
+  readSessionCache,
+  writeSessionCache,
+} from "../../../../lib/feature-session-cache";
+import { useAutoStashOnNavigation } from "../../../hooks/use-auto-stash-on-unmount";
+import { useEffect, useRef, useState } from "react";
 
 type UploadedImage = {
   id: string;
@@ -29,9 +34,74 @@ type ChatMessage = {
   content: string;
 };
 
+type LogAnalyzerCachedSession = {
+  id: string;
+  savedAt: number;
+  analyzedAt: number | null;
+  logs: string;
+  logFileName: string | null;
+  images: UploadedImage[];
+  chatMessages: ChatMessage[];
+};
+
+function sessionPreview(
+  logs: string,
+  logFileName: string | null,
+  images: UploadedImage[]
+): string {
+  if (logFileName) return logFileName;
+  if (images.length > 0) return `${images.length} 张图片附件`;
+  const line = logs.trim().split("\n")[0] ?? "";
+  return line.length > 72 ? `${line.slice(0, 72)}…` : line || "未命名会话";
+}
+
+function createLogCacheEntry(snapshot: {
+  logs: string;
+  logFileName: string | null;
+  images: UploadedImage[];
+  chatMessages: ChatMessage[];
+  analyzedAt: number | null;
+}): LogAnalyzerCachedSession {
+  return {
+    id: crypto.randomUUID(),
+    savedAt: Date.now(),
+    analyzedAt: snapshot.analyzedAt,
+    logs: snapshot.logs,
+    logFileName: snapshot.logFileName,
+    images: snapshot.images,
+    chatMessages: snapshot.chatMessages,
+  };
+}
+
+function loadLogAnalyzerCache(): LogAnalyzerCachedSession[] {
+  return readSessionCache<LogAnalyzerCachedSession>(LOG_ANALYZER_CACHE_KEY).filter(
+    (item) =>
+      typeof item.id === "string" &&
+      typeof item.savedAt === "number" &&
+      typeof item.logs === "string" &&
+      Array.isArray(item.chatMessages) &&
+      Array.isArray(item.images)
+  );
+}
+
+function isSameLogSession(
+  previous: LogAnalyzerCachedSession,
+  next: LogAnalyzerCachedSession
+): boolean {
+  return (
+    previous.logs === next.logs &&
+    previous.logFileName === next.logFileName &&
+    previous.images.length === next.images.length &&
+    previous.chatMessages.length === next.chatMessages.length &&
+    previous.analyzedAt === next.analyzedAt
+  );
+}
+
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const MAX_IMAGES = 5;
+const LOG_ANALYZER_CACHE_KEY = "log-analyzer-session-cache";
+const MAX_CACHE_ITEMS = 20;
 
 const PLATFORMS = [
   { name: "Kubernetes", color: "text-blue-400" },
@@ -135,29 +205,33 @@ export default function LogAnalyzerPage() {
   const [logFileName, setLogFileName] = useState<string | null>(null);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [analyzedAt, setAnalyzedAt] = useState<number | null>(null);
   const [followUpInput, setFollowUpInput] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [savedRecords, setSavedRecords] = useState<AnalysisRecord[]>([]);
-  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
-  const [supabaseReady, setSupabaseReady] = useState<boolean | null>(null);
+  const [cachedSessions, setCachedSessions] = useState<LogAnalyzerCachedSession[]>(
+    []
+  );
 
   const logInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const historyRecordIdRef = useRef<string | null>(null);
+  const sessionSnapshotRef = useRef({
+    isLoading: false,
+    logs: "",
+    logFileName: null as string | null,
+    images: [] as UploadedImage[],
+    chatMessages: [] as ChatMessage[],
+    analyzedAt: null as number | null,
+  });
 
   const hasAnalysis = chatMessages.length > 0;
   const canAnalyze = !isLoading && (logs.trim().length > 0 || images.length > 0);
   const canFollowUp = !isLoading && hasAnalysis && followUpInput.trim().length > 0;
-  const canSaveRecord =
-    !isLoading &&
-    !isSaving &&
-    hasAnalysis &&
-    supabaseReady !== false &&
-    (logs.trim().length > 0 || images.length > 0);
+  const canStashSession =
+    !isLoading && hasAnalysis && analyzedAt !== null;
 
   const logLines = logs.trim() ? logs.split("\n").length : 0;
   const sessionStatus = isLoading
@@ -176,38 +250,77 @@ export default function LogAnalyzerPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isLoading]);
 
-  const fetchSavedRecords = useCallback(async () => {
-    setIsLoadingRecords(true);
-    try {
-      const response = await fetch(
-        `/api/analysis-records?type=${encodeURIComponent(LOG_ANALYZER_TYPE)}&limit=20`
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        if (response.status === 503) {
-          setSupabaseReady(false);
-        }
-        if (response.status === 401) {
-          setError("请先登录后再查看记录。");
-        }
-        return;
-      }
-      setSupabaseReady(true);
-      setSavedRecords(Array.isArray(data.records) ? data.records : []);
-    } catch {
-      setSupabaseReady(false);
-    } finally {
-      setIsLoadingRecords(false);
-    }
+  useEffect(() => {
+    setCachedSessions(loadLogAnalyzerCache());
   }, []);
 
-  useEffect(() => {
-    void fetchSavedRecords();
-  }, [fetchSavedRecords]);
+  sessionSnapshotRef.current = {
+    isLoading,
+    logs,
+    logFileName,
+    images,
+    chatMessages,
+    analyzedAt,
+  };
+
+  const stashSnapshotToCache = (
+    snapshot: typeof sessionSnapshotRef.current,
+    updateState = true
+  ) => {
+    if (snapshot.isLoading) return;
+    if (snapshot.chatMessages.length === 0 || snapshot.analyzedAt === null) {
+      return;
+    }
+
+    const entry = createLogCacheEntry(snapshot);
+    const next = prependSessionCacheIfNew(
+      LOG_ANALYZER_CACHE_KEY,
+      entry,
+      MAX_CACHE_ITEMS,
+      isSameLogSession
+    );
+
+    if (updateState) {
+      setCachedSessions(next);
+    }
+  };
+
+  useAutoStashOnNavigation(
+    () => {
+      const snapshot = sessionSnapshotRef.current;
+      return (
+        !snapshot.isLoading &&
+        snapshot.chatMessages.length > 0 &&
+        snapshot.analyzedAt !== null
+      );
+    },
+    () => {
+      stashSnapshotToCache(sessionSnapshotRef.current, false);
+    }
+  );
 
   const showNotice = (message: string) => {
     setNotice(message);
     setError("");
+  };
+
+  const persistAnalysisHistory = async (messages: ChatMessage[]) => {
+    if (messages.length === 0) return;
+
+    const userInput = buildLogAnalyzerUserInput(logs, {
+      logFileName,
+      imageNames: images.map((image) => image.name),
+    });
+    const aiResult = buildAiResultFromMessages(messages);
+    const recordId = await syncAnalysisRecord({
+      recordId: historyRecordIdRef.current,
+      analysisType: LOG_ANALYZER_TYPE,
+      userInput,
+      aiResult,
+    });
+    if (recordId) {
+      historyRecordIdRef.current = recordId;
+    }
   };
 
   const importLogFile = async (file: File, source = "上传") => {
@@ -300,8 +413,13 @@ export default function LogAnalyzerPage() {
 
   const handleAnalyze = async () => {
     if (!canAnalyze) return;
+    if (hasAnalysis && analyzedAt !== null) {
+      stashSnapshotToCache(sessionSnapshotRef.current, true);
+    }
     setIsLoading(true);
     setChatMessages([]);
+    setAnalyzedAt(null);
+    historyRecordIdRef.current = null;
     setFollowUpInput("");
     setError("");
     setNotice("");
@@ -316,21 +434,27 @@ export default function LogAnalyzerPage() {
         }),
       });
       const data = await response.json();
-      setChatMessages([
+      const newMessages: ChatMessage[] = [
         {
           id: crypto.randomUUID(),
           role: "assistant",
           content: data.content ?? "未收到分析结果。",
         },
-      ]);
+      ];
+      setChatMessages(newMessages);
+      setAnalyzedAt(Date.now());
+      void persistAnalysisHistory(newMessages);
     } catch {
-      setChatMessages([
+      const newMessages: ChatMessage[] = [
         {
           id: crypto.randomUUID(),
           role: "assistant",
           content: "请求失败，请检查网络或 API 配置。",
         },
-      ]);
+      ];
+      setChatMessages(newMessages);
+      setAnalyzedAt(Date.now());
+      void persistAnalysisHistory(newMessages);
     } finally {
       setIsLoading(false);
     }
@@ -359,23 +483,23 @@ export default function LogAnalyzerPage() {
         }),
       });
       const data = await response.json();
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.content ?? "未收到回复。",
-        },
-      ]);
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.content ?? "未收到回复。",
+      };
+      const finalMessages = [...nextMessages, assistantMessage];
+      setChatMessages(finalMessages);
+      void persistAnalysisHistory(finalMessages);
     } catch {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "请求失败，请检查网络或 API 配置。",
-        },
-      ]);
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: "请求失败，请检查网络或 API 配置。",
+      };
+      const finalMessages = [...nextMessages, assistantMessage];
+      setChatMessages(finalMessages);
+      void persistAnalysisHistory(finalMessages);
     } finally {
       setIsLoading(false);
     }
@@ -388,50 +512,51 @@ export default function LogAnalyzerPage() {
     }
   };
 
-  const handleSaveRecord = async () => {
-    if (!canSaveRecord) return;
-    setIsSaving(true);
+  const handleManualStash = () => {
+    if (!canStashSession) return;
+    stashSnapshotToCache(sessionSnapshotRef.current, true);
+    setLogs("");
+    setLogFileName(null);
+    setImages([]);
+    setChatMessages([]);
+    setAnalyzedAt(null);
+    historyRecordIdRef.current = null;
+    setFollowUpInput("");
     setError("");
-    const result = await saveAnalysisRecord({
-      analysisType: LOG_ANALYZER_TYPE,
-      userInput: buildLogAnalyzerUserInput(logs, {
-        logFileName,
-        imageNames: images.map((img) => img.name),
-      }),
-      aiResult: buildAiResultFromMessages(chatMessages),
-    });
-    if (!result.ok) {
-      setError(result.error);
-      if (result.status === 503) {
-        setSupabaseReady(false);
-      }
-    } else {
-      setSupabaseReady(true);
-      setSavedRecords((prev) => [result.record, ...prev].slice(0, 20));
-      showNotice("分析记录已保存");
-    }
-    setIsSaving(false);
+    setNotice("");
+    showNotice("当前会话已暂存，可开始新的分析");
   };
 
-  const handleDeleteRecord = async (id: string) => {
-    try {
-      const response = await fetch(
-        `/api/analysis-records?id=${encodeURIComponent(id)}`,
-        { method: "DELETE" }
-      );
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data.error ?? "删除记录失败。");
-        return;
-      }
-      setSavedRecords((prev) => prev.filter((record) => record.id !== id));
-      if (expandedRecordId === id) {
-        setExpandedRecordId(null);
-      }
-      showNotice("记录已删除");
-    } catch {
-      setError("删除失败，请检查网络。");
-    }
+  const handleRestoreCachedSession = (item: LogAnalyzerCachedSession) => {
+    if (isLoading) return;
+    stashSnapshotToCache(sessionSnapshotRef.current, true);
+
+    setLogs(item.logs);
+    setLogFileName(item.logFileName);
+    setImages(item.images);
+    setChatMessages(item.chatMessages);
+    setAnalyzedAt(item.analyzedAt);
+    historyRecordIdRef.current = null;
+    setFollowUpInput("");
+    setError("");
+    setNotice("");
+    setCachedSessions((prev) => {
+      const next = prev.filter((session) => session.id !== item.id);
+      writeSessionCache(LOG_ANALYZER_CACHE_KEY, next);
+      return next;
+    });
+    showNotice("已从缓存恢复会话");
+  };
+
+  const handleDeleteCachedSession = (id: string) => {
+    const next = cachedSessions.filter((session) => session.id !== id);
+    writeSessionCache(LOG_ANALYZER_CACHE_KEY, next);
+    setCachedSessions(next);
+  };
+
+  const handleClearCache = () => {
+    writeSessionCache(LOG_ANALYZER_CACHE_KEY, []);
+    setCachedSessions([]);
   };
 
   return (
@@ -460,11 +585,11 @@ export default function LogAnalyzerPage() {
             </div>
             <button
               type="button"
-              onClick={handleSaveRecord}
-              disabled={!canSaveRecord}
-              className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-transparent disabled:text-slate-500"
+              onClick={handleManualStash}
+              disabled={!canStashSession}
+              className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-transparent disabled:text-slate-500"
             >
-              {isSaving ? "保存中…" : "保存记录"}
+              暂存当前
             </button>
             <button
               type="button"
@@ -513,80 +638,65 @@ export default function LogAnalyzerPage() {
           <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[10px] font-medium uppercase tracking-wider text-slate-600">
-                分析记录
+                会话缓存
               </p>
-              <button
-                type="button"
-                onClick={() => void fetchSavedRecords()}
-                disabled={isLoadingRecords}
-                className="text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-50"
-              >
-                {isLoadingRecords ? "刷新中…" : "刷新"}
-              </button>
+              <span className="text-[10px] text-slate-600">
+                {cachedSessions.length > 0
+                  ? `${cachedSessions.length} 个`
+                  : "暂无"}
+              </span>
             </div>
 
-            {supabaseReady === false ? (
+            {cachedSessions.length === 0 ? (
               <p className="text-[11px] leading-relaxed text-slate-500">
-                未配置 Supabase。请在 .env.local 填入密钥并执行建表 SQL。
-              </p>
-            ) : savedRecords.length === 0 ? (
-              <p className="text-[11px] text-slate-500">
-                {isLoadingRecords ? "加载中…" : "暂无保存记录"}
+                分析完成后，切换导航会自动暂存；也可点击「暂存当前」后开始新对话
               </p>
             ) : (
-              <ul className="max-h-[320px] space-y-2 overflow-y-auto">
-                {savedRecords.map((record) => {
-                  const expanded = expandedRecordId === record.id;
-                  return (
-                    <li
-                      key={record.id}
-                      className="rounded-md border border-slate-800 bg-[#080c10] p-2.5"
-                    >
+              <ul className="max-h-[360px] space-y-2 overflow-y-auto">
+                {cachedSessions.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-md border border-slate-800 bg-[#080c10] p-2.5"
+                  >
+                    <p className="truncate font-mono text-[11px] text-sky-100/90">
+                      {sessionPreview(item.logs, item.logFileName, item.images)}
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-600">
+                      {formatRecordTime(new Date(item.savedAt).toISOString())} ·{" "}
+                      {item.chatMessages.length} 条对话
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() =>
-                          setExpandedRecordId(expanded ? null : record.id)
-                        }
-                        className="w-full text-left"
+                        onClick={() => handleRestoreCachedSession(item)}
+                        disabled={isLoading}
+                        className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-300 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <p className="truncate font-mono text-[11px] text-emerald-100/90">
-                          {recordInputPreview(record.input_content)}
-                        </p>
-                        <p className="mt-1 text-[10px] text-slate-600">
-                          {formatRecordTime(record.created_at)} · 日志分析
-                        </p>
+                        恢复
                       </button>
-                      {expanded && (
-                        <div className="mt-2 space-y-2 border-t border-slate-800 pt-2">
-                          <div>
-                            <p className="mb-1 text-[10px] font-medium text-slate-500">
-                              用户输入
-                            </p>
-                            <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900/60 p-2 text-[10px] text-slate-400">
-                              {record.input_content}
-                            </pre>
-                          </div>
-                          <div>
-                            <p className="mb-1 text-[10px] font-medium text-slate-500">
-                              AI 结果
-                            </p>
-                            <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900/60 p-2 text-[10px] text-slate-400">
-                              {record.result}
-                            </pre>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteRecord(record.id)}
-                            className="text-[10px] text-red-400/80 hover:text-red-400"
-                          >
-                            删除
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCachedSession(item.id)}
+                        disabled={isLoading}
+                        className="rounded-md border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-medium text-slate-400 hover:border-slate-600 hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
+            )}
+
+            {cachedSessions.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearCache}
+                disabled={isLoading}
+                className="mt-2 text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-50"
+              >
+                清空缓存
+              </button>
             )}
           </div>
         </aside>
@@ -725,7 +835,7 @@ export default function LogAnalyzerPage() {
 
             {/* 分析报告 */}
             <section className="dashboard-panel flex min-h-[420px] flex-col lg:min-h-[calc(100vh-220px)]">
-              <div className="dashboard-panel-header flex items-center justify-between px-4 py-3">
+              <div className="dashboard-panel-header flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <div className="flex items-center gap-2">
                   <IconChart className="h-4 w-4 text-emerald-500" />
                   <h2 className="text-sm font-medium text-slate-200">
@@ -733,19 +843,23 @@ export default function LogAnalyzerPage() {
                   </h2>
                 </div>
                 {hasAnalysis && (
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                    已生成
-                  </span>
-                )}
-                {hasAnalysis && (
-                  <button
-                    type="button"
-                    onClick={handleSaveRecord}
-                    disabled={!canSaveRecord}
-                    className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isSaving ? "保存中…" : "保存记录"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                      已生成
+                    </span>
+                    <ExportPdfButton
+                      title="日志分析报告"
+                      analysisType="日志分析"
+                      analyzedAt={new Date(analyzedAt ?? Date.now())}
+                      userInput={buildLogAnalyzerUserInput(logs, {
+                        logFileName,
+                        imageNames: images.map((image) => image.name),
+                      })}
+                      aiResult={buildAiResultFromMessages(chatMessages)}
+                      filenamePrefix="log-analyzer"
+                      disabled={isLoading || analyzedAt === null}
+                    />
+                  </div>
                 )}
               </div>
 

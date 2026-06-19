@@ -111,10 +111,77 @@ export async function saveAnalysisRecord(params: {
   }
 }
 
+export async function updateAnalysisRecord(params: {
+  id: string;
+  userInput?: string;
+  aiResult: string;
+}): Promise<SaveAnalysisRecordResult> {
+  try {
+    const response = await fetch("/api/analysis-records", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: params.id,
+        userInput: params.userInput,
+        aiResult: params.aiResult,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: data.error ?? "更新分析记录失败。",
+        status: response.status,
+      };
+    }
+
+    return { ok: true, record: data.record as AnalysisRecord };
+  } catch {
+    return { ok: false, error: "更新失败，请检查网络或 Supabase 配置。" };
+  }
+}
+
+/** 首次分析创建记录，追问后更新同一条记录（静默失败，不阻断主流程） */
+export async function syncAnalysisRecord(params: {
+  recordId?: string | null;
+  analysisType: string;
+  userInput: string;
+  aiResult: string;
+}): Promise<string | null> {
+  if (!params.userInput.trim() || !params.aiResult.trim()) {
+    return params.recordId ?? null;
+  }
+
+  if (params.recordId) {
+    const updated = await updateAnalysisRecord({
+      id: params.recordId,
+      userInput: params.userInput,
+      aiResult: params.aiResult,
+    });
+    return updated.ok ? updated.record.id : params.recordId;
+  }
+
+  const created = await saveAnalysisRecord({
+    analysisType: params.analysisType,
+    userInput: params.userInput,
+    aiResult: params.aiResult,
+  });
+  return created.ok ? created.record.id : null;
+}
+
 export function buildAiResultFromMessages(messages: ChatMessageLike[]): string {
+  let followUpIndex = 0;
+
   return messages
-    .map((message) => {
-      const label = message.role === "user" ? "用户追问" : "AI 分析";
+    .map((message, index) => {
+      let label: string;
+      if (message.role === "user") {
+        followUpIndex += 1;
+        label = `用户追问 ${followUpIndex}`;
+      } else {
+        label = index === 0 ? "AI 初次分析" : `AI 回复 ${followUpIndex || 1}`;
+      }
       return `## ${label}\n\n${message.content.trim()}`;
     })
     .join("\n\n---\n\n");
@@ -351,6 +418,9 @@ export function getInputContentLabel(type: string): string {
 
 export function getResultContentLabel(type: string): string {
   switch (type) {
+    case LOG_ANALYZER_TYPE:
+    case ERROR_EXPLAINER_TYPE:
+      return "完整过程（含追问）";
     case DAILY_REPORT_TYPE:
       return "日报内容";
     default:

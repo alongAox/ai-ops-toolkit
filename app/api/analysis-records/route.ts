@@ -155,6 +155,74 @@ export async function POST(request: Request) {
   return NextResponse.json({ record: data as AnalysisRecordRow });
 }
 
+export async function PATCH(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return supabaseNotConfiguredResponse();
+  }
+
+  const scope = await resolveUserScope();
+  if (!scope.ok) {
+    return scope.response;
+  }
+
+  const supabase = createSupabaseAdmin();
+  if (!supabase) {
+    return supabaseNotConfiguredResponse();
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "请求体无效。" }, { status: 400 });
+  }
+
+  const id =
+    typeof (body as { id?: unknown }).id === "string"
+      ? (body as { id: string }).id.trim()
+      : "";
+  const userInput =
+    typeof (body as { userInput?: unknown }).userInput === "string"
+      ? (body as { userInput: string }).userInput.trim()
+      : undefined;
+  const aiResult =
+    typeof (body as { aiResult?: unknown }).aiResult === "string"
+      ? (body as { aiResult: string }).aiResult.trim()
+      : "";
+
+  if (!id) {
+    return NextResponse.json({ error: "缺少 id。" }, { status: 400 });
+  }
+  if (!aiResult) {
+    return NextResponse.json({ error: "缺少 aiResult。" }, { status: 400 });
+  }
+
+  const updates: Record<string, string> = { result: aiResult };
+  if (userInput) {
+    updates.input_content = userInput;
+  }
+
+  let query = supabase.from(TABLE).update(updates).eq("id", id);
+
+  if (scope.userId) {
+    query = query.eq("user_id", scope.userId);
+  }
+
+  const { data, error } = await query
+    .select("id, analysis_type, input_content, result, created_at, user_id")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: "记录不存在或无权更新。" }, { status: 404 });
+  }
+
+  return NextResponse.json({ record: data as AnalysisRecordRow });
+}
+
 export async function DELETE(request: Request) {
   if (!isSupabaseConfigured()) {
     return supabaseNotConfiguredResponse();
