@@ -5,10 +5,14 @@ import {
   COMBINED_ANALYSIS_SUPPLEMENT,
   FOLLOW_UP_SYSTEM_PROMPT,
   DAILY_REPORT_SYSTEM_PROMPT,
+  ERROR_EXPLAINER_SYSTEM_PROMPT,
+  ERROR_EXPLAINER_FOLLOW_UP_SYSTEM_PROMPT,
   buildLogUserPrompt,
   buildImageUserPrompt,
   buildCombinedUserPrompt,
   buildDailyReportUserPrompt,
+  buildErrorExplainerUserPrompt,
+  buildErrorExplainerFollowUpContext,
   buildFollowUpContext,
   type ChatTurn,
 } from "./prompts";
@@ -225,7 +229,11 @@ export async function POST(req: Request) {
         ? "followup"
         : body.mode === "daily-report"
           ? "daily-report"
-          : "analyze";
+          : body.mode === "error-explainer"
+            ? "error-explainer"
+            : body.mode === "error-explainer-followup"
+              ? "error-explainer-followup"
+              : "analyze";
     const logs = typeof body.logs === "string" ? body.logs : undefined;
     const images: ImagePayload[] = Array.isArray(body.images)
       ? body.images.filter(
@@ -309,6 +317,107 @@ export async function POST(req: Request) {
         {
           role: "user",
           content: buildDailyReportUserPrompt(logs.trim()),
+        },
+      ];
+
+      const response = await callChatApi(
+        provider,
+        apiKey,
+        getTextModel(provider),
+        apiMessages
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errMsg =
+          data?.error?.message ??
+          `${provider === "openai" ? "OpenAI" : "OpenRouter"} 请求失败 (${response.status})`;
+
+        return NextResponse.json(
+          { content: errMsg },
+          { status: response.status }
+        );
+      }
+
+      return NextResponse.json({
+        content:
+          data?.choices?.[0]?.message?.content ?? "No response received",
+      });
+    }
+
+    if (mode === "error-explainer-followup") {
+      const messages = parseChatTurns(body.messages);
+
+      if (messages.length === 0) {
+        return NextResponse.json(
+          { content: "请提供对话内容。" },
+          { status: 400 }
+        );
+      }
+
+      if (messages[messages.length - 1].role !== "user") {
+        return NextResponse.json(
+          { content: "最后一条消息须为用户提问。" },
+          { status: 400 }
+        );
+      }
+
+      const apiMessages: ApiMessage[] = [
+        {
+          role: "system",
+          content:
+            ERROR_EXPLAINER_FOLLOW_UP_SYSTEM_PROMPT +
+            buildErrorExplainerFollowUpContext(logs),
+        },
+        ...messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      ];
+
+      const response = await callChatApi(
+        provider,
+        apiKey,
+        getTextModel(provider),
+        apiMessages
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errMsg =
+          data?.error?.message ??
+          `${provider === "openai" ? "OpenAI" : "OpenRouter"} 请求失败 (${response.status})`;
+
+        return NextResponse.json(
+          { content: errMsg },
+          { status: response.status }
+        );
+      }
+
+      return NextResponse.json({
+        content:
+          data?.choices?.[0]?.message?.content ?? "No response received",
+      });
+    }
+
+    if (mode === "error-explainer") {
+      if (!logs?.trim()) {
+        return NextResponse.json(
+          { content: "请提供错误信息或堆栈跟踪。" },
+          { status: 400 }
+        );
+      }
+
+      const apiMessages: ApiMessage[] = [
+        {
+          role: "system",
+          content: ERROR_EXPLAINER_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: buildErrorExplainerUserPrompt(logs.trim()),
         },
       ];
 

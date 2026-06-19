@@ -2,15 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthSidebarFooter } from "./auth-sidebar-footer";
 import {
+  IconAlert,
+  IconChart,
   IconDocument,
+  IconHistory,
   IconLogo,
   IconTerminal,
 } from "./dashboard-icons";
 
 const NAV_ITEMS = [
-  { href: "/log-analyzer", label: "日志分析器", icon: IconTerminal },
-  { href: "/daily-report", label: "日报生成器", icon: IconDocument },
+  { href: "/dashboard", label: "Dashboard", icon: IconChart },
+  { href: "/log-analyzer", label: "Log Analyzer", icon: IconTerminal },
+  { href: "/error-explainer", label: "Error Explainer", icon: IconAlert },
+  { href: "/daily-report", label: "Daily Report", icon: IconDocument },
+  { href: "/history", label: "History", icon: IconHistory },
 ] as const;
 
 export function AppSidebar() {
@@ -26,13 +33,13 @@ export function AppSidebar() {
           <p className="text-sm font-semibold tracking-tight text-slate-100">
             AI Analyzer
           </p>
-          <p className="text-[11px] text-slate-500">运维智能平台</p>
+          <p className="text-[11px] text-slate-500">Ops Intelligence</p>
         </div>
       </div>
 
       <nav className="flex-1 p-3">
         <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-          功能菜单
+          Navigation
         </p>
         <ul className="space-y-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
@@ -59,6 +66,7 @@ export function AppSidebar() {
           })}
         </ul>
       </nav>
+      <AuthSidebarFooter />
     </aside>
   );
 }

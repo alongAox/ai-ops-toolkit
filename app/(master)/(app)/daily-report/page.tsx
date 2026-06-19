@@ -1,6 +1,6 @@
 "use client";
 
-import { DailyReportGenerator } from "../../components/daily-report-generator";
+import { DailyReportGenerator } from "../../../components/daily-report-generator";
 
 export default function DailyReportPage() {
   return (

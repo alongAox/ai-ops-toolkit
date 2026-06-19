@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconDocument, IconTerminal } from "./dashboard-icons";
+import {
+  buildDailyReportUserInput,
+  DAILY_REPORT_TYPE,
+  formatRecordTime,
+  saveAnalysisRecord,
+} from "../../lib/analysis-records";
 
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
 const MAX_SAVED_REPORTS = 30;
@@ -13,6 +19,7 @@ type SavedReport = {
   content: string;
   createdAt: number;
   sourceHint?: string;
+  sourceLogs?: string;
 };
 
 function readFileAsText(file: File): Promise<string> {
@@ -40,12 +47,7 @@ function formatBytes(n: number): string {
 }
 
 function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatRecordTime(new Date(ts).toISOString());
 }
 
 function buildReportTitle(date: Date): string {
@@ -110,6 +112,7 @@ export function DailyReportGenerator() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [copyHint, setCopyHint] = useState("");
 
   const logInputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +122,8 @@ export function DailyReportGenerator() {
     savedReports.find((report) => report.id === activeReportId) ?? null;
 
   const canGenerate = !isLoading && logs.trim().length > 0;
+  const canSaveRecord =
+    !isLoading && !isSaving && Boolean(activeReport?.content.trim());
   const logLines = logs.trim() ? logs.split("\n").length : 0;
 
   useEffect(() => {
@@ -205,6 +210,7 @@ export function DailyReportGenerator() {
         content,
         createdAt,
         sourceHint: logFileName ?? `${logLines} 行日志`,
+        sourceLogs: logs.trim(),
       };
 
       setSavedReports((prev) => {
@@ -253,6 +259,26 @@ export function DailyReportGenerator() {
     setSavedReports([]);
     setActiveReportId(null);
     showNotice("已清空全部暂存日报");
+  };
+
+  const handleSaveRecord = async () => {
+    if (!canSaveRecord || !activeReport) return;
+    setIsSaving(true);
+    setError("");
+    const result = await saveAnalysisRecord({
+      analysisType: DAILY_REPORT_TYPE,
+      userInput: buildDailyReportUserInput(activeReport.sourceLogs ?? logs, {
+        logFileName,
+        sourceHint: activeReport.sourceHint,
+      }),
+      aiResult: activeReport.content,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      showNotice("日报已保存至历史记录");
+    }
+    setIsSaving(false);
   };
 
   return (
@@ -359,6 +385,14 @@ export function DailyReportGenerator() {
             </div>
             {activeReport && !isLoading && (
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveRecord}
+                  disabled={!canSaveRecord}
+                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSaving ? "保存中…" : "保存记录"}
+                </button>
                 <button
                   type="button"
                   onClick={() => handleCopy(activeReport)}

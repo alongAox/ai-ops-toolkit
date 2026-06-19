@@ -5,8 +5,17 @@ import {
   IconChart,
   IconShield,
   IconTerminal,
-} from "../../components/dashboard-icons";
-import { useEffect, useRef, useState } from "react";
+} from "../../../components/dashboard-icons";
+import {
+  buildAiResultFromMessages,
+  buildLogAnalyzerUserInput,
+  formatRecordTime,
+  LOG_ANALYZER_TYPE,
+  recordInputPreview,
+  saveAnalysisRecord,
+  type AnalysisRecord,
+} from "../../../../lib/analysis-records";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UploadedImage = {
   id: string;
@@ -130,6 +139,11 @@ export default function LogAnalyzerPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [savedRecords, setSavedRecords] = useState<AnalysisRecord[]>([]);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+  const [supabaseReady, setSupabaseReady] = useState<boolean | null>(null);
 
   const logInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -138,6 +152,12 @@ export default function LogAnalyzerPage() {
   const hasAnalysis = chatMessages.length > 0;
   const canAnalyze = !isLoading && (logs.trim().length > 0 || images.length > 0);
   const canFollowUp = !isLoading && hasAnalysis && followUpInput.trim().length > 0;
+  const canSaveRecord =
+    !isLoading &&
+    !isSaving &&
+    hasAnalysis &&
+    supabaseReady !== false &&
+    (logs.trim().length > 0 || images.length > 0);
 
   const logLines = logs.trim() ? logs.split("\n").length : 0;
   const sessionStatus = isLoading
@@ -155,6 +175,35 @@ export default function LogAnalyzerPage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isLoading]);
+
+  const fetchSavedRecords = useCallback(async () => {
+    setIsLoadingRecords(true);
+    try {
+      const response = await fetch(
+        `/api/analysis-records?type=${encodeURIComponent(LOG_ANALYZER_TYPE)}&limit=20`
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) {
+          setSupabaseReady(false);
+        }
+        if (response.status === 401) {
+          setError("请先登录后再查看记录。");
+        }
+        return;
+      }
+      setSupabaseReady(true);
+      setSavedRecords(Array.isArray(data.records) ? data.records : []);
+    } catch {
+      setSupabaseReady(false);
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchSavedRecords();
+  }, [fetchSavedRecords]);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -339,6 +388,52 @@ export default function LogAnalyzerPage() {
     }
   };
 
+  const handleSaveRecord = async () => {
+    if (!canSaveRecord) return;
+    setIsSaving(true);
+    setError("");
+    const result = await saveAnalysisRecord({
+      analysisType: LOG_ANALYZER_TYPE,
+      userInput: buildLogAnalyzerUserInput(logs, {
+        logFileName,
+        imageNames: images.map((img) => img.name),
+      }),
+      aiResult: buildAiResultFromMessages(chatMessages),
+    });
+    if (!result.ok) {
+      setError(result.error);
+      if (result.status === 503) {
+        setSupabaseReady(false);
+      }
+    } else {
+      setSupabaseReady(true);
+      setSavedRecords((prev) => [result.record, ...prev].slice(0, 20));
+      showNotice("分析记录已保存");
+    }
+    setIsSaving(false);
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    try {
+      const response = await fetch(
+        `/api/analysis-records?id=${encodeURIComponent(id)}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.error ?? "删除记录失败。");
+        return;
+      }
+      setSavedRecords((prev) => prev.filter((record) => record.id !== id));
+      if (expandedRecordId === id) {
+        setExpandedRecordId(null);
+      }
+      showNotice("记录已删除");
+    } catch {
+      setError("删除失败，请检查网络。");
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col text-slate-100">
       {/* 顶栏 */}
@@ -363,6 +458,14 @@ export default function LogAnalyzerPage() {
               />
               <span className="text-xs text-slate-400">{statusLabel}</span>
             </div>
+            <button
+              type="button"
+              onClick={handleSaveRecord}
+              disabled={!canSaveRecord}
+              className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-transparent disabled:text-slate-500"
+            >
+              {isSaving ? "保存中…" : "保存记录"}
+            </button>
             <button
               type="button"
               onClick={handleAnalyze}
@@ -406,6 +509,85 @@ export default function LogAnalyzerPage() {
               <li>· 修复建议</li>
               <li>· 风险等级</li>
             </ul>
+          </div>
+          <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-slate-600">
+                分析记录
+              </p>
+              <button
+                type="button"
+                onClick={() => void fetchSavedRecords()}
+                disabled={isLoadingRecords}
+                className="text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-50"
+              >
+                {isLoadingRecords ? "刷新中…" : "刷新"}
+              </button>
+            </div>
+
+            {supabaseReady === false ? (
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                未配置 Supabase。请在 .env.local 填入密钥并执行建表 SQL。
+              </p>
+            ) : savedRecords.length === 0 ? (
+              <p className="text-[11px] text-slate-500">
+                {isLoadingRecords ? "加载中…" : "暂无保存记录"}
+              </p>
+            ) : (
+              <ul className="max-h-[320px] space-y-2 overflow-y-auto">
+                {savedRecords.map((record) => {
+                  const expanded = expandedRecordId === record.id;
+                  return (
+                    <li
+                      key={record.id}
+                      className="rounded-md border border-slate-800 bg-[#080c10] p-2.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedRecordId(expanded ? null : record.id)
+                        }
+                        className="w-full text-left"
+                      >
+                        <p className="truncate font-mono text-[11px] text-emerald-100/90">
+                          {recordInputPreview(record.input_content)}
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-600">
+                          {formatRecordTime(record.created_at)} · 日志分析
+                        </p>
+                      </button>
+                      {expanded && (
+                        <div className="mt-2 space-y-2 border-t border-slate-800 pt-2">
+                          <div>
+                            <p className="mb-1 text-[10px] font-medium text-slate-500">
+                              用户输入
+                            </p>
+                            <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900/60 p-2 text-[10px] text-slate-400">
+                              {record.input_content}
+                            </pre>
+                          </div>
+                          <div>
+                            <p className="mb-1 text-[10px] font-medium text-slate-500">
+                              AI 结果
+                            </p>
+                            <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-900/60 p-2 text-[10px] text-slate-400">
+                              {record.result}
+                            </pre>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteRecord(record.id)}
+                            className="text-[10px] text-red-400/80 hover:text-red-400"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </aside>
 
@@ -554,6 +736,16 @@ export default function LogAnalyzerPage() {
                   <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                     已生成
                   </span>
+                )}
+                {hasAnalysis && (
+                  <button
+                    type="button"
+                    onClick={handleSaveRecord}
+                    disabled={!canSaveRecord}
+                    className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSaving ? "保存中…" : "保存记录"}
+                  </button>
                 )}
               </div>
 
