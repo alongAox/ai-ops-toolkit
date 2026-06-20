@@ -48,6 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isPublicRoute =
+    pathname === "/" ||
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/auth/") ||
@@ -64,10 +65,6 @@ export async function updateSession(request: NextRequest) {
   if (user && pathname === "/login") {
     const next = request.nextUrl.searchParams.get("next") || "/dashboard";
     return NextResponse.redirect(new URL(next, request.url));
-  }
-
-  if (user && pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return supabaseResponse;

@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Analyzer",
-  description: "面向运维与 SRE 的 AI 智能日志分析平台",
+  title: "AI Analyzer — 运维智能分析平台",
+  description:
+    "面向运维与 SRE 的 AI 智能平台：日志分析、错误解释、日报生成、数据统计与 PDF 报告导出。",
 };
 
 export default function RootLayout({

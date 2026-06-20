@@ -143,3 +143,91 @@ body {
   background: #334155;
   box-shadow: none;
 }
+
+/* Landing Page */
+.landing-page {
+  background-color: #0b0f14;
+  background-image:
+    radial-gradient(ellipse 100% 80% at 50% -30%, rgba(16, 185, 129, 0.08), transparent),
+    linear-gradient(rgba(30, 41, 59, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 59, 0.2) 1px, transparent 1px);
+  background-size: 100% 100%, 64px 64px, 64px 64px;
+}
+
+.landing-orb {
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.5;
+}
+
+.landing-orb--emerald {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, transparent 70%);
+}
+
+.landing-orb--cyan {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.2) 0%, transparent 70%);
+}
+
+.landing-fade-up {
+  animation: landing-fade-up 0.8s ease-out both;
+}
+
+.landing-fade-up--delay {
+  animation-delay: 0.15s;
+}
+
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-mockup {
+  animation: landing-float 6s ease-in-out infinite;
+}
+
+.landing-mockup-glow {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(34, 211, 238, 0.1));
+  filter: blur(24px);
+}
+
+@keyframes landing-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.landing-workflow-line {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(16, 185, 129, 0.4) 20%,
+    rgba(16, 185, 129, 0.4) 80%,
+    transparent
+  );
+}
+
+.landing-intro-card {
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.landing-feature-card {
+  text-decoration: none;
+}
+
+.landing-tech-pill {
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.landing-cta {
+  background: linear-gradient(180deg, #0d1219 0%, #0b0f14 100%);
+}
