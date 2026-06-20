@@ -301,6 +301,9 @@ OpenAI API 需单独绑卡充值。建议改用 OpenRouter + DeepSeek。
 
 私有项目（`package.json` 中 `"private": true`）。
 
+## Live Demo:
+https://ai-ops-toolkit.netlify.app
+
 ## 项目截图
 <img width="2529" height="1247" alt="image" src="https://github.com/user-attachments/assets/eb57dc40-43bc-4d7b-9ff5-47b425c136c6" />
 <img width="2513" height="1325" alt="image" src="https://github.com/user-attachments/assets/e4d4e7a4-fa18-4447-a799-dfa108e0a95c" />
