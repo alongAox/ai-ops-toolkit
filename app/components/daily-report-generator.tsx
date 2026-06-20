@@ -2,10 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconDocument, IconTerminal } from "./dashboard-icons";
+import { ExportPdfButton } from "./export-pdf-button";
+import {
+  buildDailyReportUserInput,
+  DAILY_REPORT_TYPE,
+  formatRecordTime,
+  saveAnalysisRecord,
+} from "../../lib/analysis-records";
 
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
 const MAX_SAVED_REPORTS = 30;
 const STORAGE_KEY = "ai-analyzer-daily-reports";
+const ACTIVE_REPORT_KEY = "daily-report-active-id";
 
 type SavedReport = {
   id: string;
@@ -13,6 +21,7 @@ type SavedReport = {
   content: string;
   createdAt: number;
   sourceHint?: string;
+  sourceLogs?: string;
 };
 
 function readFileAsText(file: File): Promise<string> {
@@ -40,12 +49,7 @@ function formatBytes(n: number): string {
 }
 
 function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatRecordTime(new Date(ts).toISOString());
 }
 
 function buildReportTitle(date: Date): string {
@@ -124,11 +128,21 @@ export function DailyReportGenerator() {
   useEffect(() => {
     const stored = loadSavedReports();
     setSavedReports(stored);
-    if (stored.length > 0) {
-      setActiveReportId(stored[0].id);
-    }
+    const savedActiveId = localStorage.getItem(ACTIVE_REPORT_KEY);
+    const validActive =
+      savedActiveId && stored.some((report) => report.id === savedActiveId);
+    setActiveReportId(validActive ? savedActiveId : stored[0]?.id ?? null);
     hydratedRef.current = true;
   }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (activeReportId) {
+      localStorage.setItem(ACTIVE_REPORT_KEY, activeReportId);
+    } else {
+      localStorage.removeItem(ACTIVE_REPORT_KEY);
+    }
+  }, [activeReportId]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -205,6 +219,7 @@ export function DailyReportGenerator() {
         content,
         createdAt,
         sourceHint: logFileName ?? `${logLines} 行日志`,
+        sourceLogs: logs.trim(),
       };
 
       setSavedReports((prev) => {
@@ -213,6 +228,14 @@ export function DailyReportGenerator() {
       });
       setActiveReportId(newReport.id);
       showNotice("日报已生成并暂存，可继续输入新日志生成其他日报");
+      void saveAnalysisRecord({
+        analysisType: DAILY_REPORT_TYPE,
+        userInput: buildDailyReportUserInput(newReport.sourceLogs ?? logs, {
+          logFileName,
+          sourceHint: newReport.sourceHint,
+        }),
+        aiResult: newReport.content,
+      });
     } catch {
       setError("请求失败，请检查网络或 API 配置。");
     } finally {
@@ -343,7 +366,7 @@ export function DailyReportGenerator() {
             />
 
             <p className="text-[10px] text-slate-600">
-              生成的日报会自动暂存，可清空输入后继续生成其他日报
+              生成的日报会在生成完成后自动暂存；仅输入未生成时切换导航不会保存
             </p>
           </div>
         </section>
@@ -358,7 +381,18 @@ export function DailyReportGenerator() {
               </h2>
             </div>
             {activeReport && !isLoading && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <ExportPdfButton
+                  title={activeReport.title}
+                  analysisType="运维日报"
+                  analyzedAt={new Date(activeReport.createdAt)}
+                  userInput={buildDailyReportUserInput(
+                    activeReport.sourceLogs ?? logs,
+                    { sourceHint: activeReport.sourceHint }
+                  )}
+                  aiResult={activeReport.content}
+                  filenamePrefix="daily-report"
+                />
                 <button
                   type="button"
                   onClick={() => handleCopy(activeReport)}
@@ -438,7 +472,7 @@ export function DailyReportGenerator() {
 
         {savedReports.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-slate-600">
-            暂无暂存日报，生成后会自动保存在此列表（刷新页面后仍保留）
+            暂无暂存日报；生成完成后会自动保存在此，切换导航后点击标题可恢复查看
           </p>
         ) : (
           <ul className="divide-y divide-slate-800/80">
