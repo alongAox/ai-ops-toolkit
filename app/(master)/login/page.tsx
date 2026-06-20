@@ -18,7 +18,6 @@ type AuthMode = "signin" | "signup";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
   const callbackError = searchParams.get("error");
 
   const authConfigured = isSupabaseAuthConfigured();
@@ -90,7 +89,7 @@ function LoginForm() {
         }
 
         sessionStorage.setItem(AUTH_WELCOME_STORAGE_KEY, trimmedEmail);
-        router.push(nextPath);
+        router.push("/");
         router.refresh();
         return;
       }

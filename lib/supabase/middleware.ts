@@ -58,13 +58,11 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublicRoute) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (user && pathname === "/login") {
-    const next = request.nextUrl.searchParams.get("next") || "/dashboard";
-    return NextResponse.redirect(new URL(next, request.url));
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return supabaseResponse;
