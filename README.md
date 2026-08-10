@@ -9,7 +9,7 @@
 
 ## 🌐 Live Demo
 
-[Coming soon](https://ai-ops-toolkit.netlify.app)
+(https://ai-ops-toolkit.netlify.app)
 
 ## 预览
 
