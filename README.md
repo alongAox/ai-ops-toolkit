@@ -7,6 +7,10 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
 ![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e)
 
+## 🌐 Live Demo
+
+[Coming soon](https://ai-ops-toolkit.netlify.app)
+
 ## 预览
 
 - **SaaS 风格项目首页**：`/`` 展示项目介绍、功能特性、技术栈
@@ -300,9 +304,6 @@ OpenAI API 需单独绑卡充值。建议改用 OpenRouter + DeepSeek。
 ## 许可证
 
 私有项目（`package.json` 中 `"private": true`）。
-
-## Live Demo:
-https://ai-ops-toolkit.netlify.app
 
 ## 项目截图
 <img width="2529" height="1247" alt="image" src="https://github.com/user-attachments/assets/eb57dc40-43bc-4d7b-9ff5-47b425c136c6" />
