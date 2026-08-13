@@ -7,6 +7,10 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
 ![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20DB-3ecf8e)
 
+## 🌐 Live Demo
+
+(https://ai-ops-toolkit.netlify.app)
+
 ## 预览
 
 - **SaaS 风格项目首页**：`/`` 展示项目介绍、功能特性、技术栈
@@ -300,3 +304,16 @@ OpenAI API 需单独绑卡充值。建议改用 OpenRouter + DeepSeek。
 ## 许可证
 
 私有项目（`package.json` 中 `"private": true`）。
+
+## 项目截图
+<img width="2529" height="1247" alt="image" src="https://github.com/user-attachments/assets/eb57dc40-43bc-4d7b-9ff5-47b425c136c6" />
+<img width="2513" height="1325" alt="image" src="https://github.com/user-attachments/assets/e4d4e7a4-fa18-4447-a799-dfa108e0a95c" />
+<img width="2302" height="1017" alt="image" src="https://github.com/user-attachments/assets/3ff9d959-ab61-4584-8625-06872e704444" />
+<img width="2320" height="951" alt="image" src="https://github.com/user-attachments/assets/751407dc-b406-4257-91e0-be6d843f955b" />
+<img width="2117" height="1283" alt="image" src="https://github.com/user-attachments/assets/956a096c-a4e7-4864-8daa-2698582d7cbf" />
+<img width="2517" height="1376" alt="image" src="https://github.com/user-attachments/assets/4c5c66cd-3651-48cf-878b-cf7f87505da9" />
+<img width="2506" height="1380" alt="image" src="https://github.com/user-attachments/assets/304c9cff-fe1b-4574-a3b5-85001d7b90c5" />
+
+
+
+
