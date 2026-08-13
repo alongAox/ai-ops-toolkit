@@ -9,6 +9,7 @@ import {
 } from "../../../lib/supabase/cookie-options";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/client";
 import { AUTH_WELCOME_STORAGE_KEY } from "../../../lib/supabase/user-display";
+import { enterGuestSession, exitGuestSession } from "../../../lib/guest";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -89,6 +90,7 @@ function LoginForm() {
         }
 
         sessionStorage.setItem(AUTH_WELCOME_STORAGE_KEY, trimmedEmail);
+        exitGuestSession();
         router.push("/");
         router.refresh();
         return;
@@ -112,6 +114,12 @@ function LoginForm() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleGuestEnter = () => {
+    enterGuestSession();
+    router.push("/dashboard");
+    router.refresh();
   };
 
   return (
@@ -283,6 +291,21 @@ function LoginForm() {
                 : "注册账号"}
           </button>
         </form>
+
+        {authConfigured && (
+          <div className="mt-4 border-t border-slate-800 pt-4">
+            <button
+              type="button"
+              onClick={handleGuestEnter}
+              className="w-full rounded-lg border border-dashed border-slate-700 bg-transparent px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:border-emerald-500/40 hover:text-emerald-400"
+            >
+              以游客身份体验
+            </button>
+            <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-600">
+              无需登录即可使用全部分析功能，但分析结果不会保存到数据库。
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

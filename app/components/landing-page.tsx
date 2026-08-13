@@ -12,6 +12,7 @@ import Link from "next/link";
 
 type LandingPageProps = {
   isAuthenticated: boolean;
+  isGuest?: boolean;
 };
 
 const FEATURES = [
@@ -166,7 +167,7 @@ function ProductMockup() {
   );
 }
 
-export function LandingPage({ isAuthenticated }: LandingPageProps) {
+export function LandingPage({ isAuthenticated, isGuest }: LandingPageProps) {
   const primaryHref = isAuthenticated ? "/dashboard" : "/login";
   const primaryLabel = isAuthenticated ? "进入控制台" : "免费开始使用";
 
@@ -190,6 +191,12 @@ export function LandingPage({ isAuthenticated }: LandingPageProps) {
                 <span className="status-dot status-dot--live" />
                 面向运维与 SRE 的 AI 智能平台
               </div>
+              {isGuest && (
+                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-semibold text-amber-300">
+                  <span className="status-dot status-dot--live" />
+                  游客模式 · 分析结果不保存
+                </div>
+              )}
               <h1 className="text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl xl:text-6xl">
                 用 AI 加速
                 <span className="mt-1 block bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">

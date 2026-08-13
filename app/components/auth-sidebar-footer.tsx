@@ -4,6 +4,7 @@ import { ToastPopup } from "./toast-popup";
 import { createSupabaseBrowserClient } from "../../lib/supabase/client";
 import { isSupabaseAuthConfigured } from "../../lib/supabase/env";
 import { formatWelcomeMessage } from "../../lib/supabase/user-display";
+import { isGuestSession, exitGuestSession } from "../../lib/guest";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -11,10 +12,17 @@ export function AuthSidebarFooter() {
   const router = useRouter();
   const [welcomeText, setWelcomeText] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
   const [showLogoutToast, setShowLogoutToast] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseAuthConfigured()) return;
+
+    const guest = isGuestSession();
+    setIsGuest(guest);
+
+    // 游客态下无需拉取 Supabase 用户
+    if (guest) return;
 
     const supabase = createSupabaseBrowserClient();
 
@@ -61,8 +69,33 @@ export function AuthSidebarFooter() {
     setShowLogoutToast(true);
   };
 
+  const handleExitGuest = useCallback(() => {
+    exitGuestSession();
+    router.push("/login");
+    router.refresh();
+  }, [router]);
+
   if (!isSupabaseAuthConfigured()) {
     return null;
+  }
+
+  // 游客模式：展示提示并提供"退出游客"入口
+  if (isGuest) {
+    return (
+      <div className="border-t border-slate-800/80 p-3">
+        <div className="mb-2 flex items-center gap-2 px-2 text-xs text-amber-400">
+          <span className="status-dot status-dot--live" />
+          游客模式
+        </div>
+        <button
+          type="button"
+          onClick={handleExitGuest}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2 text-xs font-medium text-slate-300 hover:border-slate-600 hover:bg-slate-800"
+        >
+          退出游客 · 登录
+        </button>
+      </div>
+    );
   }
 
   return (

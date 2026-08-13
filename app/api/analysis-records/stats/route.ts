@@ -10,7 +10,9 @@ import {
 } from "../../../../lib/analysis-records";
 import { getSessionUser } from "../../../../lib/supabase/auth-server";
 import { isSupabaseAuthConfigured } from "../../../../lib/supabase/env";
+import { GUEST_SESSION_COOKIE } from "../../../../lib/guest";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 const TABLE = "analysis_history";
 
@@ -107,6 +109,18 @@ export async function GET() {
   if (authEnabled) {
     const user = await getSessionUser();
     if (!user) {
+      // 游客模式：统计全部为 0（不写入数据库，也无历史可读）
+      const store = await cookies();
+      if (store.get(GUEST_SESSION_COOKIE)?.value === "1") {
+        return NextResponse.json({
+          stats: {
+            total: 0,
+            logAnalyzer: 0,
+            dailyReport: 0,
+            errorExplainer: 0,
+          },
+        });
+      }
       return unauthorizedResponse();
     }
     userId = user.id;

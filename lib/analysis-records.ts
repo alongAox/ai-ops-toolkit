@@ -1,3 +1,5 @@
+import { isGuestSession } from "./guest";
+
 export const LOG_ANALYZER_TYPE = "log-analyzer";
 export const ERROR_EXPLAINER_TYPE = "error-explainer";
 export const DAILY_REPORT_TYPE = "daily-report";
@@ -85,6 +87,11 @@ export async function saveAnalysisRecord(params: {
   userInput: string;
   aiResult: string;
 }): Promise<SaveAnalysisRecordResult> {
+  // 游客模式不落库：直接返回成功（record 为 null），由调用方自行忽略
+  if (isGuestSession()) {
+    return { ok: true, record: null as unknown as AnalysisRecord };
+  }
+
   try {
     const response = await fetch("/api/analysis-records", {
       method: "POST",
@@ -116,6 +123,11 @@ export async function updateAnalysisRecord(params: {
   userInput?: string;
   aiResult: string;
 }): Promise<SaveAnalysisRecordResult> {
+  // 游客模式不落库
+  if (isGuestSession()) {
+    return { ok: true, record: null as unknown as AnalysisRecord };
+  }
+
   try {
     const response = await fetch("/api/analysis-records", {
       method: "PATCH",
@@ -149,6 +161,11 @@ export async function syncAnalysisRecord(params: {
   userInput: string;
   aiResult: string;
 }): Promise<string | null> {
+  // 游客模式完全不落库，直接返回 null（不创建/不更新记录）
+  if (isGuestSession()) {
+    return null;
+  }
+
   if (!params.userInput.trim() || !params.aiResult.trim()) {
     return params.recordId ?? null;
   }

@@ -5,7 +5,9 @@ import {
 } from "../../../lib/supabase/admin";
 import { getSessionUser } from "../../../lib/supabase/auth-server";
 import { isSupabaseAuthConfigured } from "../../../lib/supabase/env";
+import { GUEST_SESSION_COOKIE } from "../../../lib/guest";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 const TABLE = "analysis_history";
 const DEFAULT_LIMIT = 50;
@@ -26,20 +28,26 @@ function unauthorizedResponse() {
 }
 
 async function resolveUserScope(): Promise<
-  { ok: true; userId: string | null; authEnabled: boolean } | { ok: false; response: Response }
+  { ok: true; userId: string | null; authEnabled: boolean; isGuest: boolean } | { ok: false; response: Response }
 > {
   const authEnabled = isSupabaseAuthConfigured();
 
   if (!authEnabled) {
-    return { ok: true, userId: null, authEnabled: false };
+    return { ok: true, userId: null, authEnabled: false, isGuest: false };
   }
 
   const user = await getSessionUser();
-  if (!user) {
-    return { ok: false, response: unauthorizedResponse() };
+  if (user) {
+    return { ok: true, userId: user.id, authEnabled: true, isGuest: false };
   }
 
-  return { ok: true, userId: user.id, authEnabled: true };
+  // 游客模式：允许请求通过，但不写入数据库（记录不保存）
+  const store = await cookies();
+  if (store.get(GUEST_SESSION_COOKIE)?.value === "1") {
+    return { ok: true, userId: null, authEnabled: true, isGuest: true };
+  }
+
+  return { ok: false, response: unauthorizedResponse() };
 }
 
 export async function GET(request: Request) {
@@ -50,6 +58,11 @@ export async function GET(request: Request) {
   const scope = await resolveUserScope();
   if (!scope.ok) {
     return scope.response;
+  }
+
+  // 游客模式：没有历史记录，直接返回空列表
+  if (scope.isGuest) {
+    return NextResponse.json({ records: [] });
   }
 
   const supabase = createSupabaseAdmin();
@@ -95,6 +108,11 @@ export async function POST(request: Request) {
   const scope = await resolveUserScope();
   if (!scope.ok) {
     return scope.response;
+  }
+
+  // 游客模式：不落库，直接返回成功（record 为 null）
+  if (scope.isGuest) {
+    return NextResponse.json({ record: null, guest: true });
   }
 
   const supabase = createSupabaseAdmin();
@@ -165,6 +183,11 @@ export async function PATCH(request: Request) {
     return scope.response;
   }
 
+  // 游客模式：不落库，直接返回成功（record 为 null）
+  if (scope.isGuest) {
+    return NextResponse.json({ record: null, guest: true });
+  }
+
   const supabase = createSupabaseAdmin();
   if (!supabase) {
     return supabaseNotConfiguredResponse();
@@ -231,6 +254,11 @@ export async function DELETE(request: Request) {
   const scope = await resolveUserScope();
   if (!scope.ok) {
     return scope.response;
+  }
+
+  // 游客模式：没有可删除的记录，直接返回成功
+  if (scope.isGuest) {
+    return NextResponse.json({ ok: true, guest: true });
   }
 
   const supabase = createSupabaseAdmin();

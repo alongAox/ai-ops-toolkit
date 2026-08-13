@@ -6,6 +6,7 @@ import {
   parseRememberDays,
 } from "./cookie-options";
 import { getSupabasePublishableKey, getSupabaseUrl, isSupabaseAuthConfigured } from "./env";
+import { GUEST_SESSION_COOKIE } from "../guest";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -47,6 +48,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+  const isGuest = request.cookies.get(GUEST_SESSION_COOKIE)?.value === "1";
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/login" ||
@@ -55,13 +57,13 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico";
 
-  if (!user && !isPublicRoute) {
+  if (!user && !isGuest && !isPublicRoute) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && pathname === "/login") {
+  if ((user || isGuest) && pathname === "/login") {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

@@ -1,5 +1,6 @@
 import { AppSidebar } from "../../components/app-sidebar";
 import { WelcomeBanner } from "../../components/welcome-banner";
+import { GuestModeBanner } from "../../components/guest-mode-banner";
 import { requireAuth } from "../../../lib/supabase/auth-server";
 
 export default async function AppLayout({
@@ -14,6 +15,7 @@ export default async function AppLayout({
       <AppSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <WelcomeBanner />
+        <GuestModeBanner />
         {children}
       </div>
     </div>
